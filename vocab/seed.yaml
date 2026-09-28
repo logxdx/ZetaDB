@@ -1,0 +1,68 @@
+# Controlled vocabulary seed (spec 7.5).
+#   joytag: a Danbooru tag JoyTag can score directly, or null.
+#   Terms with joytag: null are scored zero-shot by jina-clip-v2, which is
+#   what makes arbitrary user vocabulary work at all.
+#   prompt: overrides the default "a photo of {term}" for the CLIP path.
+
+# --- screenshots, UI, documents  (almost all CLIP-only: Danbooru has no
+#     vocabulary for interfaces)
+- {term: screenshot, requires_text: true,   joytag: null,  kind: artifact, prompt: "a screenshot of a computer screen"}
+- {term: dashboard, requires_text: true,    joytag: null,  kind: artifact, prompt: "a software dashboard with charts and metrics"}
+- {term: wireframe,    joytag: null,  kind: artifact, prompt: "a low fidelity wireframe mockup of an interface"}
+- {term: code, requires_text: true,         joytag: null,  kind: artifact, prompt: "a screenshot of source code in an editor"}
+- {term: terminal, requires_text: true,     joytag: null,  kind: artifact, prompt: "a terminal or command line window"}
+- {term: spreadsheet, requires_text: true,  joytag: null,  kind: artifact, prompt: "a spreadsheet of rows and columns of numbers"}
+- {term: invoice, requires_text: true,      joytag: null,  kind: artifact, prompt: "an invoice or receipt document"}
+- {term: slide, requires_text: true,        joytag: null,  kind: artifact, prompt: "a presentation slide"}
+- {term: webpage, requires_text: true,      joytag: null,  kind: artifact, prompt: "a web page in a browser"}
+- {term: form, requires_text: true,         joytag: null,  kind: artifact, prompt: "a form with input fields"}
+
+# --- diagrams, plans, data
+- {term: chart,        joytag: chart,  kind: artifact, prompt: "a chart or graph of data"}
+- {term: diagram,      joytag: null,   kind: artifact, prompt: "a technical diagram with boxes and arrows"}
+- {term: map,          joytag: map,    kind: artifact, prompt: "a map"}
+- {term: site-plan,    joytag: null,   kind: artifact, prompt: "an architectural site plan or floor plan drawing"}
+- {term: whiteboard, requires_text: true,   joytag: null,   kind: artifact, prompt: "handwriting and sketches on a whiteboard"}
+- {term: table, requires_text: true,        joytag: table,  kind: artifact, prompt: "a table of rows and columns"}
+- {term: handwriting, requires_text: true,  joytag: null,   kind: artifact, prompt: "handwritten text"}
+
+# --- real-world scenes and objects (JoyTag's stronger half)
+- {term: tree,      aliases: [trees], joytag: tree,      kind: object}
+- {term: forest,    joytag: forest,    kind: scene}
+- {term: grass,     joytag: grass,     kind: object}
+- {term: flower,    aliases: [flowers], joytag: flower,  kind: object}
+- {term: water,     joytag: water,     kind: object}
+- {term: ocean,     joytag: ocean,     kind: scene}
+- {term: mountain,  aliases: [mountains], joytag: mountain, kind: scene}
+- {term: sky,       joytag: sky,       kind: scene}
+- {term: cloud,     aliases: [clouds], joytag: cloud,    kind: object}
+- {term: night,     joytag: night,     kind: scene}
+- {term: sunset,    joytag: sunset,    kind: scene}
+- {term: snow,      joytag: snow,      kind: scene}
+- {term: building,  aliases: [buildings], joytag: building, kind: object}
+- {term: city,      joytag: cityscape, kind: scene}
+- {term: road,      joytag: road,      kind: object}
+- {term: bridge,    joytag: bridge,    kind: object}
+- {term: window,    joytag: window,    kind: object}
+- {term: door,      joytag: door,      kind: object}
+- {term: car,       joytag: car,       kind: object}
+- {term: train,     joytag: train,     kind: object}
+- {term: boat,      joytag: boat,      kind: object}
+- {term: animal,    joytag: animal,    kind: object}
+- {term: cat,       joytag: cat,       kind: object}
+- {term: dog,       joytag: dog,       kind: object}
+- {term: bird,      joytag: bird,      kind: object}
+- {term: food,      joytag: food,      kind: object}
+- {term: book,      joytag: book,      kind: object}
+- {term: chair,     joytag: chair,     kind: object}
+- {term: plant,     joytag: plant,     kind: object}
+
+# --- style / medium
+- {term: monochrome,   joytag: monochrome,   kind: style}
+- {term: photo,        joytag: photo_background, kind: style, prompt: "a photograph"}
+- {term: illustration, joytag: null,  kind: style, prompt: "a digital illustration or drawing"}
+- {term: sketch,       joytag: sketch, kind: style}
+- {term: dark-theme,   joytag: null,  kind: style, prompt: "a dark themed user interface"}
+- {term: portrait,     joytag: portrait, kind: style}
+- {term: indoors,      joytag: indoors,  kind: scene}
+- {term: outdoors,     joytag: outdoors, kind: scene}

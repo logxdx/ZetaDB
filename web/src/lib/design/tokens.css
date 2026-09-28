@@ -1,0 +1,113 @@
+/* iwashere design tokens — spec §13.3
+   Light palette on bare :root; dark redefined twice so both the system
+   default and an explicit toggle resolve correctly. */
+
+:root {
+  --bg:      #FFFFFF;
+  --surface: #FFFFFF;
+  --raised:  #F2F0EE;
+  --border:  rgba(0, 0, 0, 0.12);
+  --text:    #0A0A0A;
+  --muted:   #6E6E76;
+  --accent:  #FF5A1F;
+
+  /* Floating chrome. The reference surface is a fully-rounded capsule that
+     sits ON the canvas rather than above it in a bar: a warm off-white fill,
+     a hairline, an inner top highlight and a whisper of drop shadow. Those
+     four together are what make it read as a physical control. */
+  --chrome:        #F2F0EE;
+  --chrome-border: rgba(0, 0, 0, 0.12);
+  --chrome-shadow:
+      inset 0 1px 1.5px rgba(255, 255, 255, 0.7),
+      inset 0 -1px 1.5px rgba(0, 0, 0, 0.03),
+      0 1px 8px rgba(0, 0, 0, 0.05);
+  --chrome-h: 52px;
+  --tile-radius: 3px;
+  --tile-gap: 12px;
+
+  --ok:   #2F7A4F;
+  --warn: #A8721A;
+  --miss: #8A8A93;
+  --err:  #C0392B;
+
+  --radius: 4px;
+  --gutter: 10px;
+  --col:    240px;
+
+  --font-content: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  --fs-xs: 12px; --fs-sm: 13px; --fs-md: 15px;
+  --fs-lg: 18px; --fs-xl: 24px; --fs-2xl: 32px;
+
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg:      #0A0A0B;
+    --surface: #141415;
+    --raised:  #1A1A1C;
+    --border:  #242426;
+    --text:    #ECECEE;
+    --muted:   #8C8C94;
+    --chrome:        #191919;
+    --chrome-border: rgba(255, 255, 255, 0.14);
+    --chrome-shadow:
+        inset 0 1px 1.5px rgba(255, 255, 255, 0.07),
+        inset 0 -1px 1.5px rgba(0, 0, 0, 0.3),
+        0 1px 10px rgba(0, 0, 0, 0.45);
+    --ok:   #4ADE80;
+    --warn: #FBBF24;
+    --miss: #6E6E76;
+    --err:  #F87171;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg:      #0B0B0C;
+  --surface: #141416;
+  --raised:  #1C1C1F;
+  --border:  #232327;
+  --text:    #EDEDEF;
+  --muted:   #8A8A93;
+  --chrome:        #191919;
+  --chrome-border: rgba(255, 255, 255, 0.14);
+  --chrome-shadow:
+      inset 0 1px 1.5px rgba(255, 255, 255, 0.07),
+      inset 0 -1px 1.5px rgba(0, 0, 0, 0.3),
+      0 1px 10px rgba(0, 0, 0, 0.45);
+  --ok:   #4ADE80;
+  --warn: #FBBF24;
+  --miss: #6E6E76;
+  --err:  #F87171;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-content);
+  font-size: var(--fs-md);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Accent is for focus, active and selection only — it clears 4.5:1 on the
+   dark ground but not the light one, so it never carries body text. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.mono { font-family: var(--font-mono); font-size: var(--fs-xs); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

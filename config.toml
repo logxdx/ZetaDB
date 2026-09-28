@@ -1,0 +1,211 @@
+# iwashere configuration
+# Values marked [M0] were measured on this machine, not estimated.
+
+[server]
+host = "127.0.0.1"
+port = 8777
+
+[paths]
+data       = "./data"
+models     = "./data/models"
+blobs      = "./data/blobs"
+thumbs     = "./data/thumbs"
+db         = "./data/iwashere.db"
+watch_dirs = ["~/dump"]
+
+[gpu]
+# [M0] RTX 4050 Laptop (AD107M), 6141 MiB total.
+# Intel UHD iGPU drives the Wayland session, so the dGPU is compute-only:
+#   6141 total - 76 idle - 288 driver-reserved = 5777 MiB usable.
+# Budget leaves ~375 MiB headroom for allocator fragmentation.
+total_mb     = 6141
+budget_mb    = 5400
+pool_a_ttl_s = 300
+pool_b_ttl_s = 120
+nvidia_smi_poll_ms = 500
+
+[quant]
+# Global policy: quantize aggressively, prefer Unsloth Dynamic (UD) quants.
+# Vision projectors (mmproj) stay at F16 or Q8_0 - they are small and
+# quantizing them below Q8 measurably degrades image grounding.
+prefer        = "unsloth-ud"
+decoder       = "Q3_K_XL"
+mmproj        = "F16"
+mmproj_fallback = "Q8_0"
+
+[models.ppocr_det]
+role      = "ocr-detection"
+repo      = "PaddlePaddle/PP-OCRv6_medium_det_onnx"
+backend   = "onnx"
+pool      = "A"
+
+[models.ppocr_rec]
+role      = "ocr-recognition"
+repo      = "PaddlePaddle/PP-OCRv6_medium_rec_onnx"
+backend   = "onnx"
+pool      = "A"
+
+[models.joytag]
+# Ships model.onnx as well as safetensors, so no torch in the serving path.
+# top_tags.txt is the 5000-tag index our vocabulary aliases point into.
+role      = "vocab-tag-scoring"
+repo      = "fancyfeast/joytag"
+backend   = "onnx"
+pool      = "A"
+resolution = 448
+threshold_default = 0.40
+
+[models.jina_clip]
+# One combined ONNX carries BOTH towers; loading it once serves image
+# embedding (pool A) and text embedding (CPU). int8 per the quant policy.
+role      = "multimodal-embedding"
+repo      = "jinaai/jina-clip-v2"
+backend   = "onnx"
+file_glob = "onnx/model_int8.onnx"
+dtype     = "int8"
+pool      = "A"
+dim       = 1024
+
+[models.qwen_embed]
+role      = "text-embedding"
+repo      = "Qwen/Qwen3-Embedding-0.6B-GGUF"
+backend   = "llama.cpp"
+file_glob = "*Q8_0.gguf"
+pool      = "CPU"
+dim       = 1024
+
+[models.vlm_default]
+role         = "captioner"
+repo         = "unsloth/Qwen3.5-4B-GGUF"
+backend      = "llama.cpp"
+file_glob    = "Qwen3.5-4B-UD-Q3_K_XL.gguf"
+mmproj_glob  = "mmproj-F16.gguf"
+pool         = "B"
+ctx          = 16384
+# KV cache quantised to q8_0, WITH flash attention. Measured at 16k ctx:
+#   q8_0, no FA -> 3663 MB, 31.7 s/caption   (dequant on every attention op)
+#   f16,  no FA -> 3190 MB,  4.2 s
+#   f16,  +FA   -> 3851 MB,  3.7 s
+#   q8_0, +FA   -> 3661 MB,  3.5 s   <- chosen
+# Quantising the KV cache without flash attention is 7.5x SLOWER, not
+# cheaper. The mmproj stays F16: it is the smallest form Unsloth publishes
+# and quantising a vision projector below Q8 degrades image grounding.
+cache_type   = "q8_0"
+flash_attn   = true
+
+[models.needle]
+role    = "structured-extraction"
+repo    = "Cactus-Compute/needle3"
+backend = "cactus"
+pool    = "CPU"
+runtime_fetched = true   # engine + weights land in ~/.cache/cactus-needle
+
+[ocr]
+# Per-model backend. Detection builds a clean TensorRT INT8 engine and runs
+# ~2x faster there. Recognition does not: excluding its 18710-way classifier
+# head from quantisation (required for accuracy, see spec 5.1) fragments the
+# graph into many small TRT partitions that take many minutes to build for
+# no measured gain - it is already ~9x faster than fp32 on the CUDA EP.
+# Both models run on TensorRT at FP16, matching TurboOCR
+# (github.com/aiptimizer/TurboOCR), which serves the same PP-OCRv6 models
+# in production. FP16 is TensorRT's own execution precision, chosen by the
+# builder - the ONNX weights are untouched. That is a different axis from
+# weight quantisation, and it is the one that works here: INT8 weights cost
+# more than half the recognised text (below), while FP16 keeps accuracy and
+# still gives the 3-5x.
+det_backend    = "tensorrt"  # auto | tensorrt | onnx-cuda | onnx-cpu
+rec_backend    = "tensorrt"
+trt_opt_level  = 3           # TurboOCR: level 3 cuts build time 3-5x
+# Recognition is the one model NOT quantised. Measured on the test corpus,
+# INT8 PTQ preserved 13/28 text lines even with the 18710-way classifier
+# head excluded - "finance@acme.example" became "finiance@acme.examp",
+# "2026-03-14" became "202631". The damage is spread through the SVTR
+# sequence encoder, not just the output layer. OCR text is what search,
+# layout and entity extraction are all built on, so 9 MB is not worth it.
+# The INT8 graphs are still built and kept; these switch them on.
+rec_quantised  = false
+det_quantised  = false
+backend        = "auto"      # fallback for anything not named above
+det_long_edge  = 960
+min_rec_score  = 0.5
+rec_height     = 48
+rec_width_buckets = [64, 128, 256, 512]
+
+[layout]
+line_tol_factor       = 0.5
+line_tol_min_px       = 5.0
+blank_line_factor     = 1.4
+anchor_round          = 0.25
+anchor_min_count_frac = 0.08
+anchor_min_count_abs  = 3
+flowing_max_anchors   = 4
+flowing_min_width_frac = 0.5
+flowing_max_gap_cols  = 3.0
+sparse_whitespace_frac = 0.8
+deskew_min_deg        = 0.5
+
+[vlm]
+# Downscale before captioning. A real library is full of 25-50 MP photos;
+# sending one whole tiles into a vast number of vision tokens, and a
+# 4000x6000 image killed the llama-server connection outright. Escalated
+# items (text-dense screenshots) get more pixels, since reading an
+# interface is exactly what needs them.
+image_long_edge          = 1024
+escalate_image_long_edge = 1536
+escalate_min_batch    = 8
+escalate_max_wait_s   = 600
+escalate_on_box_count = 40
+escalate_on_text_len  = 600
+
+[embeddings]
+text_dim               = 1024
+multimodal_dim         = 1024
+qwen_covers_image_text = true   # see spec 9.4
+
+[tagging]
+w_joytag  = 0.45
+w_clip    = 0.30
+w_vlm     = 0.25
+default_threshold = 0.40
+review_floor      = 0.25
+threshold_step    = 0.02
+clip_calibration_sample = 500
+# A tag applies when the image is an OUTLIER for that term. The squash is
+# centred here, in sigmas above the term's corpus mean - not on the mean
+# itself, which accepted 53 of 54 terms per image on a real corpus.
+clip_z_center = 2.0
+# Absolute cosine floor, below which no relative score can lift a term.
+clip_abs_floor = 0.22
+clip_z_slope  = 1.0
+suppressed_tags_file = "vocab/suppressed.txt"
+
+[vocab]
+merge_auto         = 0.86
+merge_review       = 0.72
+cluster_distance   = 0.18
+cooccurrence_merge = 0.60
+
+[search]
+rrf_k            = 60
+w_tag            = 1.30
+w_lexical        = 1.00
+w_text_vec       = 1.00
+w_img_vec        = 0.90
+# [M0] Measured with Qwen3-Embedding-0.6B and its query instruction prefix:
+# an exact term match scores ~0.67-0.71 and a true synonym ~0.55-0.61, so
+# the original 0.75 could never fire. Vector floors keep KNN from returning
+# the whole corpus as "matches" when the corpus is small.
+tag_seed_min_cos = 0.55
+min_cos_text     = 0.30
+min_cos_jina     = 0.18
+
+[graph]
+seed_top_k         = 8
+seed_min_cos_jina  = 0.62
+seed_min_cos_qwen  = 0.70
+default_hops       = 2
+max_nodes          = 60
+
+[dedupe]
+phash_hamming_max = 6
+note_cosine_max   = 0.97

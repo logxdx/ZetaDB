@@ -1,0 +1,12 @@
+data/
+.venv/
+__pycache__/
+*.pyc
+node_modules/
+web/dist/
+.env
+
+# Vendored third-party runtimes (llama.cpp + CUDA redistributables).
+# 774 MB, and two files exceed GitHub's 100 MB per-file limit, so they
+# cannot be pushed. Fetched per-machine rather than tracked.
+tools/
