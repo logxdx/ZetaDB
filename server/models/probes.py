@@ -9,7 +9,6 @@ Probes never raise. A missing dependency is a result, not a crash.
 from __future__ import annotations
 
 import importlib.util
-import shutil
 import subprocess
 import sys
 import time
@@ -131,10 +130,17 @@ def _ort() -> ProbeResult:
 
 @probe("llamacpp", "runtime")
 def _llamacpp() -> ProbeResult:
-    exe = shutil.which("llama-server")
+    # Resolve exactly the way the ingest path does. Probing with a bare
+    # shutil.which("llama-server") reported MISSING on a machine whose
+    # captioner ran fine, because the installed build is named
+    # llama-server-cuda - a health check that disagrees with the runtime is
+    # worse than no health check.
+    from server.models.llama_server import find_binary
+    exe = find_binary()
     if not exe:
         return ProbeResult("llamacpp", "runtime", "missing",
-                           detail="llama-server not on PATH; build llama.cpp with -DGGML_CUDA=ON")
+                           detail="no llama.cpp server binary on PATH or in tools/; "
+                                  "build with -DGGML_CUDA=ON or set llama.server_bin")
     out = subprocess.run([exe, "--version"], capture_output=True, text=True, timeout=20)
     ver = (out.stderr or out.stdout).strip().splitlines()[0] if (out.stderr or out.stdout) else "?"
     return ProbeResult("llamacpp", "runtime", "ok", backend=ver, extra={"path": exe})

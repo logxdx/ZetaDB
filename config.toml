@@ -122,6 +122,20 @@ truncate_dim      = 0
 image_soft_tokens = 140
 max_text_tokens   = 8192
 
+[llama]
+# Which llama.cpp server binary to spawn for pool B. [M0] This machine has
+# a multi-backend install - llama-server-cuda / -vulkan / -cpu in
+# ~/.local/bin, each a symlink into its own build tree - and NO plain
+# `llama-server` anywhere on PATH. The probe looked only for the plain
+# name and reported llama.cpp missing while the captioner was expected to
+# run, so this is named rather than guessed.
+#
+# Unset falls back to llama-server-cuda, then llama-server, then the
+# vendored build under tools/. CUDA is preferred on purpose: a CPU server
+# would caption successfully at a few tokens per second and never show up
+# in the VRAM budget, which is the failure that looks like success.
+server_bin = "llama-server-cuda"
+
 [models.vlm_default]
 role         = "captioner"
 repo         = "unsloth/Qwen3.5-4B-GGUF"

@@ -25,13 +25,41 @@ from server.models import vram
 log = logging.getLogger(__name__)
 
 
-def find_binary(name: str = "llama-server") -> str | None:
-    onpath = shutil.which(name)
-    if onpath:
-        return onpath
-    for cand in sorted((ROOT / "tools").rglob(name)):
-        if cand.is_file() and os.access(cand, os.X_OK):
-            return str(cand)
+def _candidate_names() -> list[str]:
+    """Binary names to try, best first.
+
+    A multi-backend llama.cpp install suffixes the backend onto every
+    binary - llama-server-cuda, -vulkan, -cpu - so a plain `llama-server`
+    is often absent from PATH on a machine that has llama.cpp built and
+    working. Pool B is a GPU pool, so the CUDA build is preferred: falling
+    back to a CPU server would not fail, it would quietly caption at a few
+    tokens per second and never appear in the VRAM budget this design is
+    built around.
+    """
+    names = []
+    configured = load().get("llama.server_bin")
+    if configured:
+        names.append(str(configured))
+    names += ["llama-server-cuda", "llama-server"]
+    return list(dict.fromkeys(names))
+
+
+def find_binary(name: str | None = None) -> str | None:
+    """Resolve the llama.cpp server binary: PATH first, then tools/.
+
+    PATH is searched under EVERY candidate name before the vendored build
+    in tools/ is considered - a binary the user installed is newer than the
+    one checked in beside it.
+    """
+    names = [name] if name else _candidate_names()
+    for n in names:
+        onpath = shutil.which(n)
+        if onpath:
+            return onpath
+    for n in names:
+        for cand in sorted((ROOT / "tools").rglob(n)):
+            if cand.is_file() and os.access(cand, os.X_OK):
+                return str(cand)
     return None
 
 
@@ -93,7 +121,9 @@ class LlamaServer:
             return
         exe = find_binary()
         if exe is None:
-            raise RuntimeError("llama-server not found on PATH or in tools/")
+            raise RuntimeError(
+                f"no llama.cpp server binary found; tried {_candidate_names()} "
+                "on PATH and under tools/")
         self.port = _free_port()
         cmd = [exe, "-m", str(self.model), "--port", str(self.port),
                "--host", "127.0.0.1", "-c", str(self.ctx), "-ngl", str(self.ngl),
@@ -118,7 +148,11 @@ class LlamaServer:
             # Hiding the device is the only way to make a CPU model cost zero
             # VRAM, which matters on a 6 GB budget (spec 3).
             env["CUDA_VISIBLE_DEVICES"] = ""
-        lib = Path(exe).parent
+        # Resolve the symlink FIRST. An installed llama.cpp is usually a link
+        # in ~/.local/bin pointing into the build tree, and the .so files sit
+        # beside the real binary, not beside the link. Taking the link's own
+        # parent puts ~/.local/bin on LD_LIBRARY_PATH, which finds nothing.
+        lib = Path(exe).resolve().parent
         env["LD_LIBRARY_PATH"] = f"{lib}:{env.get('LD_LIBRARY_PATH','')}"
         log.info("starting llama-server: %s", self.model.name)
         self.proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
