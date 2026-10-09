@@ -1507,19 +1507,40 @@ screenshots and measures nothing.
 
 | model | VRAM | s/cap | json | r@1 | margin | ocr | chars | tags |
 |---|---|---|---|---|---|---|---|---|
-| **Qwen3.5-4B** UD-Q3_K_XL | 3747 | 3.47 | **29/29** | **1.00** | **0.1408** | 0.711 | 177 | 8.1 |
+| **Qwen3.5-4B** UD-Q3_K_XL | 3747 | 3.47 | **29/29** | **1.00** | **0.1408** | **0.711** | 177 | 8.1 |
+| Qwen3-VL 4B UD-Q3_K_XL | 4457 | 3.30 | 29/29 | 0.97 | 0.1384 | 0.667 | 212 | 8.9 |
 | Gemma 3 4B IT UD-Q3_K_XL | 3591 | 3.33 | 29/29 | 0.97 | 0.1217 | 0.622 | 216 | 6.9 |
 | InternVL3 2B Q4_K_M | **2033** | **1.92** | 25/29 | 0.96 | 0.1279 | 0.422 | 119 | 9.6 |
 | SmolVLM2 2.2B Q4_K_M | 3811 | 1.73 | 18/29 | 0.94 | 0.0840 | — | 52 | 5.3 |
 | Moondream2 f16 | — | — | 0/29 | — | — | — | — | — |
 
-**The incumbent stays.** Gemma 3 4B is 156 MB lighter and 4% faster and loses on every quality axis
-that matters: a worse retrieval margin (0.1217 against 0.1408 — the margin, not recall@1, is the
-number that still separates models once all of them "pass"), worse OCR grounding, and fewer tags.
-It also prefixes nearly every caption with "The image shows" / "The image depicts", which is why its
-captions are *longer* while saying less — that boilerplate is dead weight in an embedding. On item
-13 it was simply wrong, calling a sculpture of stacked Mercedes-Benz cars "a robotic insect-like
-vehicle" where both other models saw cars.
+A mean margin over 29 items is a thin thing to rank models on, so the comparison is **paired** —
+same item, same prompt, incumbent minus candidate — which is what separates a real gap from a
+reshuffle:
+
+| vs incumbent | n | incumbent better on | mean Δmargin | t |
+|---|---|---|---|---|
+| Qwen3-VL 4B | 29 | 17/29 | +0.0024 | **+0.73** |
+| Gemma 3 4B | 29 | 24/29 | +0.0191 | **+4.72** |
+| InternVL3 2B | 25 | 17/25 | +0.0150 | +2.48 |
+| SmolVLM2 2.2B | 18 | 15/18 | +0.0402 | +5.20 |
+
+**Gemma 3 4B's deficit is real** — it is behind on 24 of 29 individual items, not on an average.
+**Qwen3-VL 4B's is not**: t = 0.73 over 29 paired items is a tie on retrieval margin. It is a
+vision specialist and much stronger on document QA benchmarks, but captioning-for-retrieval is not
+document QA, and here it buys nothing while costing 710 MB more VRAM and a little OCR grounding.
+
+**The incumbent stays**, against all five challengers. Gemma 3 4B is 156 MB lighter and 4% faster
+and loses on every quality axis that matters: worse retrieval margin, worse OCR grounding, fewer
+tags. On item 13 it was simply wrong, calling a sculpture of stacked Mercedes-Benz cars "a robotic
+insect-like vehicle" where every other model saw cars.
+
+**The preamble is not the explanation, which was worth checking before blaming the model.** Gemma
+opens nearly every caption with "The image shows" / "The image depicts" — constant text in a field
+whose only job is to be embedded. `--no-preamble` asks for it to stop. Gemma's margin moved
+0.1217 → 0.1251, still far behind, and its captions got *longer* (216 → 230 chars) rather than
+shorter: it did not really comply. The same flag cost the incumbent OCR grounding (0.711 → 0.600)
+for no margin gain, so the production prompt stays exactly as it is. The deficit is the model.
 
 **`ocr_recall` is only comparable at 29/29.** It averages over captions that parsed, so a model that
 fails on exactly the hard text-dense items scores itself on the easy remainder. InternVL3 first
@@ -1545,6 +1566,14 @@ today is that 4 of 29 items produce no usable object, and they are the text-dens
 is among them. It also transcribes rather than describes, reading a dashboard back as a list of
 bare numbers, which duplicates work PP-OCRv6 already does better (§1.1). If pool B ever has to
 shrink to let pool A coexist, this is the first candidate to re-measure.
+
+**Not tested, and why.** Gemma 4 E4B is the obvious "newer Gemma" candidate and does **not** fit:
+UD-Q3_K_XL is 4588 MB and its mmproj another 990 MB, so 5578 MB of weights alone against a 5400 MB
+budget, before any KV cache — the same arithmetic that killed Gemma 4 12B in §17.1. "E4B" is
+effective parameters, not resident ones; the BF16 file is 15 GB. Gemma 4 **E2B** does fit
+(2924 + 986 = 3910 MB) and is the next candidate worth an hour. Florence-2 and JoyCaption are
+excluded on serving grounds rather than quality: neither is reachable through llama.cpp, so neither
+can live in pool B without a second runtime.
 
 ## 18. Open questions
 

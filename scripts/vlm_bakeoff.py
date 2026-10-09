@@ -97,6 +97,9 @@ CANDIDATES: list[Candidate] = [
               "SmolVLM2-2.2B-Instruct-Q4_K_M.gguf",
               "mmproj-SmolVLM2-2.2B-Instruct-f16.gguf",
               note="2.2B, the lightest credible captioner"),
+    Candidate("qwen3vl_4b", "unsloth/Qwen3-VL-4B-Instruct-GGUF",
+              "Qwen3-VL-4B-Instruct-UD-Q3_K_XL.gguf", "mmproj-F16.gguf",
+              note="Qwen3-VL 4B, a vision SPECIALIST at the incumbent's quant"),
     Candidate("internvl3_2b", "ggml-org/InternVL3-2B-Instruct-GGUF",
               "InternVL3-2B-Instruct-Q4_K_M.gguf",
               "mmproj-InternVL3-2B-Instruct-f16.gguf",
@@ -169,8 +172,18 @@ def resolve_blob(cfg, blob_path: str) -> Path:
     return p if p.is_absolute() else (cfg.path("paths.data") / p)
 
 
+# Several candidates open nearly every caption with "The image shows" or
+# "The image depicts". That is ~18 characters of constant text in a field
+# whose whole job is to be embedded, so it dilutes every vector identically.
+# This variant asks for it to stop, which separates a model that cannot see
+# from a model that merely preambles.
+NO_PREAMBLE = (
+    " Do not begin with \"The image shows\", \"The image depicts\", \"This is\" "
+    "or any similar opener - start with the subject itself.")
+
+
 def generate(c: Candidate, images: list[dict], escalate: bool,
-             max_tokens: int = 400) -> dict:
+             max_tokens: int = 400, no_preamble: bool = False) -> dict:
     cfg = load()
     found = paths_for(cfg, c)
     if not found:
@@ -203,9 +216,12 @@ def generate(c: Candidate, images: list[dict], escalate: bool,
         t1 = time.time()
         try:
             b64, mime = C._encode(blob, long_edge)
+            prompt = C.ESCALATED_PROMPT if escalate else C.PROMPT
+            if no_preamble:
+                prompt += NO_PREAMBLE
             msg = [{"role": "user", "content": [
                 {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}},
-                {"type": "text", "text": C.ESCALATED_PROMPT if escalate else C.PROMPT},
+                {"type": "text", "text": prompt},
             ]}]
             raw = _chat(srv, msg, c, max_tokens)
             obj = json.loads(raw)
@@ -331,6 +347,8 @@ def main() -> int:
     ap.add_argument("--list", action="store_true")
     ap.add_argument("--max-tokens", type=int, default=400,
                     help="a truncated string is a JSON failure, so this is the\ndifference between a model that cannot comply and one that rambles")
+    ap.add_argument("--no-preamble", action="store_true",
+                    help="ask the model not to open with \"The image shows\"")
     ap.add_argument("--json", action="store_true")
     a = ap.parse_args()
 
@@ -362,7 +380,8 @@ def main() -> int:
     recs = []
     for key in keys:
         c = BY_KEY[key]
-        f = out_dir / f"{key}.json"
+        suffix = "-nopreamble" if a.no_preamble else ""
+        f = out_dir / f"{key}{suffix}.json"
         if a.score_only:
             if not f.exists():
                 print(f"  {key}: no saved captions, skipping")
@@ -370,7 +389,8 @@ def main() -> int:
             rec = json.loads(f.read_text())
         else:
             print(f"[{key}] {c.note}")
-            rec = generate(c, images, a.escalate, a.max_tokens)
+            rec = generate(c, images, a.escalate, a.max_tokens,
+                           a.no_preamble)
             f.write_text(json.dumps(rec, indent=2))
             if rec["status"] != "ok":
                 print(f"  {key}: {rec['status']}\n")
