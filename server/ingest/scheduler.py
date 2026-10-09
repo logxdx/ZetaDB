@@ -111,9 +111,9 @@ class Scheduler:
                 handler(ids)
             elif stage not in ("finalize",):
                 log.debug("stage %s has no handler; passing %d item(s) through", stage, len(ids))
-        except Exception:
+        except Exception as exc:
             log.exception("stage %s failed for %d item(s)", stage, len(ids))
-            self._record_errors(stage, ids)
+            self._record_errors(stage, ids, exc)
         finally:
             if lease is not None:
                 arbiter.release(lease)
@@ -124,13 +124,21 @@ class Scheduler:
                  stage, len(ids), time.monotonic() - t0, nxt or "done")
         hub.emit("queue.changed", self.status())
 
-    def _record_errors(self, stage: str, ids: list[int]) -> None:
+    def _record_errors(self, stage: str, ids: list[int],
+                       exc: BaseException | None = None) -> None:
+        # Store what actually went wrong. The literal "stage handler raised"
+        # this used to write left 29 caption failures in the database with
+        # no way to tell a missing binary from a dead connection, since the
+        # traceback only ever reached a log that had long since rotated -
+        # and spec 4.4 wants this field readable in the UI.
+        detail = f"{type(exc).__name__}: {exc}"[:500] if exc else "stage handler raised"
+
         def work(conn: sqlite3.Connection) -> None:
             now = int(time.time())
             for i in ids:
                 conn.execute(
                     "INSERT INTO item_errors(item_id, stage, error, ts) VALUES (?,?,?,?)",
-                    (i, stage, "stage handler raised", now))
+                    (i, stage, detail, now))
                 conn.execute(
                     "UPDATE ingest_queue SET attempts = attempts + 1 "
                     "WHERE item_id = ? AND stage = ?", (i, stage))
