@@ -24,12 +24,18 @@ Two consequences:
     no standalone image tower, so "load the image side only" is not a
     thing here.
 
-[!] float16 is unusable. Google's card is explicit: the activation range
-exceeds fp16's dynamic range, and in fp16 the model "returns NaN or
-silently degraded embeddings rather than raising an error". That rules out
-the *_fp16 and *_q4f16 ONNX variants, and rules out the TensorRT FP16 path
-this repo uses for PP-OCR. int8 (model_quantized) or fp32 only - and the
-failure mode is silent, so this is not a knob to experiment with casually.
+Precision: int8 by default, because it is smallest and fastest. [M0]
+against the unquantised graphs, cosine agreement with fp32 on identical
+input is 0.9954-1.0000 for int8 and 0.9999-1.0000 for fp16, with retrieval
+margin 0.212 vs 0.216 - all three are interchangeable on quality, and int8
+is 509 MB against fp16's 878 MB.
+
+Google's card warns that fp16 gives NaN or silently degraded embeddings
+because the activation range exceeds fp16's dynamic range. That does not
+reproduce on THIS export, on CPU or CUDA: onnx-community ships a mixed
+precision graph (320 fp16 weight tensors, 7 kept fp32, and ReduceSum / Max
+/ Sin / Cos still emitting fp32), so the sensitive ops never run in fp16.
+The warning applies to a torch_dtype=float16 load, which this is not.
 
 Placement: vision encoder on the GPU (pool A), backbone on the CPU. The
 backbone is the only part search needs, and keeping it off the GPU means a
@@ -83,21 +89,27 @@ def format_document(content: str, title: str | None = None) -> str:
 
 
 class Eg2:
-    def __init__(self) -> None:
+    def __init__(self, key: str = "eg2") -> None:
+        """`key` selects the config block, so an alternate build (the fp32
+        reference, say) can be instantiated beside the default one to
+        measure what quantisation costs. Everything in the serving path
+        uses engine(), which only ever builds the default."""
         cfg = load()
-        d = cfg.path("paths.models") / "eg2"
+        d = cfg.path("paths.models") / key
+        self.key = key
         self.dir = d
-        dtype = cfg.get("models.eg2.dtype", "quantized")
-        self.backbone_path = d / "onnx" / f"model_{dtype}.onnx"
-        self.vision_path = d / "onnx" / f"vision_encoder_{dtype}.onnx"
+        dtype = cfg.get(f"models.{key}.dtype", "quantized")
+        sfx = f"_{dtype}" if dtype else ""      # "" selects the fp32 graphs
+        self.backbone_path = d / "onnx" / f"model{sfx}.onnx"
+        self.vision_path = d / "onnx" / f"vision_encoder{sfx}.onnx"
         self.tok_path = d / "tokenizer.json"
-        self.dim = cfg.get("models.eg2.dim", 768)
+        self.dim = cfg.get(f"models.{key}.dim", 768)
         # Matryoshka: 768 native, truncatable to 512/256/128. 0 = no
         # truncation. Truncating REQUIRES re-normalising, which pack() does.
-        self.truncate_dim = cfg.get("models.eg2.truncate_dim", 0) or None
-        self.soft_tokens = cfg.get("models.eg2.image_soft_tokens", 280)
-        self.backbone_gpu = cfg.get("models.eg2.backbone_device", "cpu") == "cuda"
-        self.max_tok = cfg.get("models.eg2.max_text_tokens", 8192)
+        self.truncate_dim = cfg.get(f"models.{key}.truncate_dim", 0) or None
+        self.soft_tokens = cfg.get(f"models.{key}.image_soft_tokens", 280)
+        self.backbone_gpu = cfg.get(f"models.{key}.backbone_device", "cpu") == "cuda"
+        self.max_tok = cfg.get(f"models.{key}.max_text_tokens", 8192)
         self.available = bool(self.backbone_path.exists() and self.tok_path.exists())
         self.vision_available = self.available and self.vision_path.exists()
         self._bb = None

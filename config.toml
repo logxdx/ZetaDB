@@ -86,12 +86,26 @@ dim       = 1024
 # weights are kept only so scripts/eg2_check.py can still run the Qwen text
 # baseline. Delete both once the retrieval quality here is settled.
 #
-# [!] dtype is int8 ("quantized"), NOT fp16. Google's card states the
-# activation range exceeds fp16's dynamic range and that the model returns
-# NaN or silently degraded vectors rather than erroring. That rules out the
-# *_fp16 and *_q4f16 exports AND the TensorRT FP16 path used for PP-OCR -
-# the one place in this stack where FP16 is the measured win does not
-# generalise here, and the failure is silent.
+# dtype is int8 ("quantized") because it is the smallest and the fastest,
+# NOT because fp16 is unsafe. [M0] measured against the unquantised graphs
+# on 12 real images - agreement with fp32 on identical input:
+#            query   document    image     worst   text    image
+#   int8    1.0000     0.9999   0.9954    0.9927  2.91s   0.74s/ea
+#   fp16    1.0000     1.0000   0.9999    0.9998  4.29s   0.77s/ea
+# Retrieval margin is 0.212 (int8) against 0.216 (fp32): indistinguishable.
+#
+# Google's card warns that fp16 returns NaN or silently degraded vectors
+# because the activation range exceeds fp16's dynamic range. That did NOT
+# reproduce here, on CPU or CUDA, with zero non-finite values and 1.0000
+# agreement. The reason is that onnx-community's fp16 export is MIXED
+# precision, not a naive cast: 320 fp16 weight tensors but 7 left fp32,
+# and ReduceSum / Max / Sin / Cos still emit fp32. The warning describes a
+# torch_dtype=float16 load, where everything runs fp16. So the TensorRT
+# FP16 path is NOT off-limits here after all - it is an open optimisation
+# for the vision encoder, not a hazard.
+#
+# int8 still wins on size (509 MB against 878 MB) and speed, at no
+# measurable cost, so it stays.
 #
 # The 300M audio encoder is deliberately not in file_glob: intake accepts
 # images and text only, so it would be ~195 MB of weights we never load.
@@ -124,6 +138,39 @@ truncate_dim      = 0
 # fills pool A and PP-OCR + JoyTag have nowhere to live. 140 it is.
 # (8 images is a thin sample - re-measure on a real corpus before trusting
 # the recall figure. The margin delta is the sturdier of the two numbers.)
+image_soft_tokens = 140
+max_text_tokens   = 8192
+
+[models.eg2_fp32]
+# Temporary, for measurement only: the unquantised graphs, so "what does
+# int8 actually cost us?" can be answered instead of argued about.
+role       = "multimodal-embedding-reference"
+repo       = "onnx-community/embeddinggemma-2-ONNX"
+backend    = "onnx"
+file_glob  = ["onnx/model.onnx*", "onnx/vision_encoder.onnx*"]
+dtype      = ""
+pool       = "A"
+backbone_device   = "cpu"
+dim               = 768
+truncate_dim      = 0
+image_soft_tokens = 140
+max_text_tokens   = 8192
+
+[models.eg2_fp16]
+# Temporary, for measurement only. Google's card says fp16 returns NaN or
+# silently degraded vectors because the activation range exceeds fp16's
+# dynamic range. That claim is load-bearing - it is why models.eg2 is int8
+# and why the TensorRT FP16 path is off-limits here - so it is worth
+# checking rather than taking on trust.
+role       = "multimodal-embedding-fp16"
+repo       = "onnx-community/embeddinggemma-2-ONNX"
+backend    = "onnx"
+file_glob  = ["onnx/model_fp16.onnx*", "onnx/vision_encoder_fp16.onnx*"]
+dtype      = "fp16"
+pool       = "A"
+backbone_device   = "cpu"
+dim               = 768
+truncate_dim      = 0
 image_soft_tokens = 140
 max_text_tokens   = 8192
 
