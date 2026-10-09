@@ -1,260 +1,285 @@
 # iwashere — Style Reference
-> Infinite paper canvas. Treat the viewport as one uninterrupted field of edge-to-edge tiles, with every control floating above it as a rounded capsule object rather than sitting in a bar.
+> Midnight library. Treat the canvas as a black exhibition floor and each tile as one precisely lit object on it, with typography and blue controls operating as restrained labels around the work.
 
-**Theme:** light-first, with full dark parity — both grounds are first-class and every value below is given for both.
+**Theme:** dark
 
-Values are measured from what ships: `web/src/lib/design/tokens.css`, the component `<style>` blocks under `web/src/lib/components/`, and spec.md §13 / §17.6–17.8. The visual reference is [cosmos.so/public-work](https://www.cosmos.so/public-work), read live rather than estimated; where this project departs from it, the departure is stated.
+The visual system here is adapted from the Apple product-page reference: its palette, type system, 28px geometry, shadowless elevation and rationed blue are taken as given. What changes is the context — those values are mapped onto iwashere's surfaces (infinite canvas, floating chrome, tiles, tags, focus panel, orbit) rather than onto a storefront. Colour values and tracking are the reference's measurements; role assignments are this project's.
 
-iwashere is a local idea dump — screenshots, photographs, diagrams and typed notes, auto-tagged and searchable by keyword and meaning. The interface is a moodboard, not a file list: a text note and an image are the same object in the grid and carry equal visual weight. The page ground is plain white so photographs keep their own colour; the only warm surface in the product is the floating chrome, which is what makes it read as an object resting *on* the canvas. Tiles have a 3px radius and nothing else — no border, no shadow, no hover lift. A single orange accent is rationed to focus, active state and the live queue. Everything the machine knows — tags, confidences, dates, counts, match reasons — is set in monospace, and that one typographic contrast does most of the aesthetic work.
+iwashere is a local idea dump — screenshots, photographs, diagrams and typed notes, auto-tagged and searchable by keyword and by meaning. Under this system it stops looking like a tool and starts looking like a gallery: an uninterrupted Obsidian field that pans forever, oversized SF Pro Display type where the page is empty or a note leads, and dense SF Pro Text metadata sitting quietly in Ash beside the imagery. Broad 28px corners on every tile and panel, near-invisible elevation, compact floating chrome, and a single Signal Blue reserved for the one action in view make browsing read as a controlled exhibition rather than a card-based file list.
 
 ## Colors
 
-| Name | Light | Dark | Role |
-|------|-------|------|------|
-| Paper | `#FFFFFF` | `#0B0B0C` | Canvas ground and the surface behind every tile |
-| Shelf | `#FFFFFF` | `#141416` | Overlay surfaces: focus panel, command palette |
-| Raised | `#F2F0EE` | `#1C1C1F` | Note-tile fill, tab rests, code blocks, graph ground |
-| Chrome | `#F2F0EE` | `#191919` | Every floating capsule — search bar, round buttons, related bar, summary line, info disc |
-| Hairline | `rgba(0,0,0,0.12)` | `rgba(255,255,255,0.14)` | The 0.8px chrome keyline, on capsules only |
-| Border | `rgba(0,0,0,0.12)` | `#232327` | 1px dividers inside overlays, tag-pill outlines, kbd marks |
-| Ink | `#0A0A0A` | `#EDEDEF` | Primary text — near-black and near-white, never `#000` or `#FFF` |
-| Muted | `#6E6E76` | `#8A8A93` | Metadata, inactive capsule labels, secondary copy, placeholder text |
-| Ember | `#FF5A1F` | `#FF5A1F` | Focus ring, active tab, selected tag, highlighted graph edge, live ingest queue, dropzone |
-| Verified | `#2F7A4F` | `#4ADE80` | A probe or stage that succeeded; human-confirmed state |
-| Pending | `#A8721A` | `#FBBF24` | Machine tags awaiting review, degraded stages |
-| Absent | `#8A8A93` | `#6E6E76` | A component that is not installed — absence, not failure |
-| Failed | `#C0392B` | `#F87171` | Stage errors and surfaced exceptions |
+| Name | Value | Role |
+|------|-------|------|
+| Obsidian | `#000000` | The canvas ground — the infinite field every tile sits on — plus image tiles, media wells and the graph stage |
+| Graphite | `#0e0e0e` | Floating chrome: search bar, round controls, related bar, result strip |
+| Carbon | `#1d1d1f` | Note tiles, focus panel, command palette, and any surface that must read as a sheet rather than a hole |
+| Carbon Fade | `linear-gradient(#1d1d1f, #000000 288px)` | The only permitted gradient: the top of the focus panel dissolving into the canvas behind it |
+| Steel | `#333336` | Hairline keylines on panels, translucent control fills, the hover veil, the near-dup count marker |
+| Slate | `#6e6e73` | Input outlines, dividers, and the 1px ring that marks the subject of an orbit |
+| Ash | `#86868b` | All machine metadata — tags, dates, counts, confidences, match reasons — and inactive control labels |
+| Porcelain | `#f5f5f7` | Primary text on every dark surface: note bodies, titles, search input, headings |
+| White | `#ffffff` | Light-mode tile and panel fills, and icon detail on blue |
+| Signal Blue | `#0071e3` | Filled primary controls only — save a note, accept a tag, confirm in the palette |
+| Electric Link | `#2997ff` | Interactive text on Obsidian and Carbon: the selected tag, the highlighted graph edge, inline links, the focus ring |
+| Cobalt Link | `#0066cc` | The same on White light-mode surfaces |
+| Copper | `#b64400` | Pending machine tags, unreviewed vocabulary proposals, "new since last visit" |
+| Optical Yellow | `#ffd500` | Confidence readouts and technical values inside the focus panel |
 
-**The dark column is the `:root[data-theme="dark"]` block.** `tokens.css` currently defines dark twice — once under `prefers-color-scheme` and once under the explicit toggle — and the two disagree by a hair on six values (`#0A0A0B`/`#0B0B0C`, `#141415`/`#141416`, `#1A1A1C`/`#1C1C1F`, `#242426`/`#232327`, `#ECECEE`/`#EDEDEF`, `#8C8C94`/`#8A8A93`). The drift is invisible in use but means system-dark and toggled-dark are not the same theme; the values above are the canonical set, and the media-query block should be reconciled to them.
+**Two additions the reference has no equivalent for.** A marketing page has no failing pipeline; iwashere does, and four ingest stages can each degrade independently. Extending the palette minimally rather than overloading Copper:
 
-Ember is the only chromatic colour in the interface and it is identical in both themes. It clears 4.5:1 on the dark ground but **not** on white, so it is never used for body text, labels, or anything a reader has to parse — only for rings, fills, strokes and a count.
+| Name | Value | Role |
+|------|-------|------|
+| Verified | `#30d158` | A stage that completed, a human-confirmed tag — the reference's lone green technical cue, generalised |
+| Alert | `#ff453a` | Stage failure and surfaced exceptions, nothing else |
+
+Both are used as small text and 1px marks only, never as fills. Copper must not absorb this work: it annotates newness, not failure.
 
 ## Typography
 
-### Inter — Content. Note bodies, titles, search input, hover hints, prose, captions, the new-note composer, and glyph-bearing buttons (`×`, `+`). Carries everything a *person* wrote.
-- **Substitute:** `ui-sans-serif, system-ui, -apple-system, sans-serif`
+### SF Pro Text — Note bodies, search input, tag labels, confidences, dates, counts, match reasons, control labels, keyboard hints, captions, prose. The compact negative tracking keeps dense interface language visually quiet beside the imagery.
+- **Substitute:** Inter
 - **Weights:** 400, 500, 600
-- **Sizes:** 13px, 15px, 18px, 19px, 24px, 32px
-- **Line height:** 1.0, 1.45, 1.5, 1.6
-- **Letter spacing:** -0.02em on the search field and hover hints, -0.01em on note bodies and headings, 0 on prose
+- **Sizes:** 12px, 14px, 17px, 20px
+- **Line height:** 1.24, 1.29, 1.33, 1.43, 1.47
+- **Letter spacing:** -0.264px at 12px, -0.224px at 14px, -0.374px at 17px, -0.38px at 20px
+- **OpenType features:** `"numr"` on confidence values
 
-### JetBrains Mono — Metadata. Tags, confidences, dates, counts, match reasons, capsule control labels, relation toggles, layout dumps, graph glyphs, keyboard hints. Carries everything the *machine* inferred.
-- **Substitute:** `ui-monospace, "SF Mono", Menlo, Consolas, monospace`
-- **Weights:** 400
-- **Sizes:** 9px (graph glyphs), 11px (info disc), 12px (everything else)
-- **Line height:** 1.45, 1.6
-- **Letter spacing:** +0.02em on capsule labels and toggles, -0.01em on tag rows
+### SF Pro Display — Note ledes, item titles, section labels, counts presented as statements, and the empty-canvas statement. At 80px with -1.2px tracking the weight-600 face compresses into a single sculptural block rather than a loud banner.
+- **Substitute:** Inter
+- **Weights:** 500, 600
+- **Sizes:** 19px, 21px, 28px, 32px, 48px, 80px
+- **Line height:** 1.00, 1.05, 1.07, 1.08, 1.13, 1.19, 1.21
+- **Letter spacing:** -1.2px at 80px, -0.24px at 48px, 0.128px at 32px, 0.196px at 28px, 0.231px at 21px, 0.228px at 19px
 
-The split is the rule, not a preference: if a human typed it, it is Inter; if the pipeline produced it, it is mono. Provenance then reads at a glance with no legend anywhere in the product.
+**The one deviation, and what it costs.** The previous system set every machine-produced value in JetBrains Mono, and that contrast carried provenance with no legend. This reference has no monospace anywhere, so metadata moves to SF Pro Text 12px/400 in Ash and provenance is carried by **colour and weight instead of typeface**: Porcelain for what a human wrote, Ash for what the machine accepted, Copper for what is still pending. Monospace survives in exactly one place — literal readouts that are code, not labels: the layout dump and the raw-JSON block inside focus. Everywhere else, mono is gone.
 
 ### Type Scale
 
 | Role | Family | Weight | Size | Line Height | Letter Spacing |
 |------|--------|--------|------|-------------|----------------|
-| meta | JetBrains Mono | 400 | 12px | 1.6 | 0.02em |
-| tag-pill | JetBrains Mono | 400 | 12px | 1.6 | — |
-| capsule-label | JetBrains Mono | 400 | 12px | 1 | 0.02em |
-| search-input | Inter | 400 | 13px | 1 | -0.02em |
-| note-tile | Inter | 400 | 13px | 1.45 | -0.01em |
-| body | Inter | 400 | 15px | 1.5 | — |
-| prose | Inter | 400 | 15px | 1.6 | — |
-| focus-title | Inter | 600 | 18px | — | -0.01em |
-| composer | Inter | 400 | 18px | 1.5 | — |
-| display | Inter | 500 | 24px | — | -0.01em |
-| display-xl | Inter | 500 | 32px | — | -0.01em |
+| meta | SF Pro Text | 400 | 12px | 1.33 | -0.264px |
+| tag | SF Pro Text | 400 | 12px | 1.33 | -0.264px |
+| tag-human | SF Pro Text | 600 | 12px | 1.33 | -0.264px |
+| control-label | SF Pro Text | 500 | 12px | 1.33 | -0.12px |
+| note-body | SF Pro Text | 400 | 14px | 1.43 | -0.224px |
+| search-input | SF Pro Text | 400 | 17px | 1.47 | -0.374px |
+| body | SF Pro Text | 400 | 17px | 1.47 | -0.374px |
+| section-label | SF Pro Display | 500 | 19px | 1.21 | 0.228px |
+| item-title | SF Pro Display | 600 | 21px | 1.19 | 0.231px |
+| focus-title | SF Pro Display | 600 | 28px | 1.07 | 0.196px |
+| stat | SF Pro Display | 600 | 28px | 1.00 | 0.196px |
+| note-lede | SF Pro Display | 600 | 32px | 1.13 | 0.128px |
+| display | SF Pro Display | 600 | 48px | 1.08 | -0.24px |
+| display-xl | SF Pro Display | 600 | 80px | 1.05 | -1.2px |
 
-24px and 32px exist in the scale and are deliberately unspent in the shipped surfaces — this interface has no headline. If a marketing or onboarding surface is ever added, they are its ceiling.
+The reference spends its display sizes on a hero product reveal. iwashere has two honest homes for them: **the empty canvas**, which becomes the hero stage, and **the first line of a note tile**, set as a lede so a typed thought holds the same visual weight as a photograph beside it.
 
 ## Spacing & Layout
 
-**Density:** compact
+**Density:** comfortable
 
-- **Canvas gutter:** 12px, both axes
-- **Chrome inset:** 10px from every viewport edge
-- **Card padding:** 14px (note tile), 16px (focus body and sections)
-- **Element gap:** 4px (tag rows), 8px (chrome children), 12px (focus sections)
-- **Column target:** 172px — `columns = max(2, round(vw / (172 + 12)))`, `pitch = vw / columns`, `width = pitch − 12`
-- **Chrome height:** 52px (`--chrome-h`); related bar 54px; summary line 42px
-- **Minimum side gutter:** 16px at every width, set once on the app wrapper
+- **Section gap:** 24px
+- **Card padding:** 16px
+- **Element gap:** 4px
+- **Canvas gutter:** 24px, both axes
+- **Chrome inset:** 24px from every viewport edge
+- **Chrome height:** 44px for the global bar, 72px for the result strip
+- **Column target:** 300px — `columns = max(2, round(vw / (300 + 24)))`, `pitch = vw / columns`, `width = pitch − 24`, fluid at every width with no max
+
+**This widens the grid, and it has to.** The previous canvas ran a 172px column target at a 12px gutter — compact density, which is what a 3px tile radius wants. A 28px corner on a 172px tile eats a third of its width and reads as a lozenge; 16px of internal padding leaves a note nowhere to breathe. Comfortable density is not a garnish on this system, it is load-bearing. At 1440px the grid becomes 4 columns of 336px; at 992px, 3 of 307px; at 430px it collapses to 1.
 
 ### Border Radius
 
-- **tiles:** 3px
-- **capsules:** 999px — search bar, round buttons, toggles, pills, related bar, summary line, info disc, avatars
-- **focusPanel:** 20px
-- **surfaces:** 4px — command palette, graph, code and layout dumps, `kbd`
-- **tagPills:** 3px
-- **dropzone:** 8px
-
-Two radii carry the product: 3px for anything holding content, 999px for anything you can click. The 20px focus panel is the single intermediate value, because a fully-rounded 620px panel reads as a pill rather than a document.
+- **tiles:** 28px
+- **panels:** 28px — focus overlay, command palette, graph well
+- **navigation:** 20px — the contained floating chrome bar and related bar
+- **pills:** 9999px — tags where they take a container, toggles, the near-dup marker
+- **buttons:** 170px — the filled primary action
+- **inputs:** 980px — the search field and the palette field
+- **compactButtons:** 36px — the round close, the info marker, the theme control
+- **links:** 10px — the focus ring's own corner on inline interactive text
 
 ## Components
 
-### Floating Chrome Capsule
-**Role:** The one recipe every control shares
+### Floating Canvas Chrome
+**Role:** Global controls, resting on the canvas
 
-Full rounding (999px), `--chrome` fill, a 0.8px `--chrome-border` hairline, an inner top highlight, an inner bottom shade, and a soft drop shadow:
+A contained Graphite `#0e0e0e` bar at a 20px radius with a 1px `#282828` keyline and **no shadow of any kind** — the keyline is the entire separation. 44px tall, inset 24px from the top and both sides, holding the search field, the round controls and the ingest count. The canvas is `fixed inset-0` beneath it and nothing reserves vertical space.
 
-```css
-box-shadow:
-  inset 0 1px 1.5px rgba(255,255,255,0.7),
-  inset 0 -1px 1.5px rgba(0,0,0,0.03),
-  0 1px 8px rgba(0,0,0,0.05);          /* dark: 0.07 / 0.3 / 0.45 */
-```
+### Search Field
+**Role:** Primary input
 
-Those four layers together are what make a capsule read as a physical control rather than a div. One recipe applied six times — mark, search bar, round buttons, related bar, summary line, details card — is what makes the set read as a family instead of a toolbar.
+`rgba(255,255,255,0.04)` fill, a 1px Slate `#6e6e73` border, a 980px radius, Porcelain text at SF Pro Text 17px/400 with -0.374px tracking, Ash placeholder, 24px left and 45px right padding. Focus applies a 1px Signal Blue `#0071e3` outline at a 1px offset. No submit control; search is live.
 
-### Search Capsule
-**Role:** Primary input, floating top-left
-
-A 52px capsule, `flex: 1 1 auto`, 8px padding, containing a borderless transparent input at Inter 13px with -0.02em tracking and a `--muted` placeholder. The live ingest count sits inside it in Ember mono. No submit control; search is live.
-
-### Round Utility Button
+### Round Utility Control
 **Role:** Secondary chrome action
 
-Same capsule recipe, `min-width: 52px`, 0–16px horizontal padding, mono 12px at +0.02em in `--muted`, resolving to `--text` on hover over 140ms. Houses the theme cycle, the palette trigger and view switches.
+Transparent fill, Porcelain label, a 1px Slate `#6e6e73` outline, a 9999px radius, label in SF Pro Text 12px/400 with 16px line-height and -0.12px tracking. Compact instances take a 36px radius with a square footprint. Houses the theme cycle, the palette trigger and view switches.
 
-### Inline Disc Button
-**Role:** An action that belongs *inside* a capsule
+### Filled Action Pill
+**Role:** The one primary action in view
 
-A 34px disc filled with `--bg` and outlined with the chrome hairline, centred glyph in Inter 19px. Hover lifts colour to `--text` and scales to 1.06 over 160ms. Used for the new-note `+`, so it sits among the field's inhabitants rather than beside the capsule.
+Signal Blue `#0071e3` fill, White SF Pro Text 12px/400, 16px line-height, -0.12px tracking, a 170px radius, 7px vertical and 14px horizontal padding when compact. There is **at most one** on screen: save the note, accept the tag, confirm the palette. Every other control is outlined or text-only, which is what keeps this one legible as the thing to do.
 
 ### Canvas Tile
 **Role:** One item in the grid — image or note, identical weight
 
-3px radius, `--raised` fill, `overflow: hidden`, no border and no shadow. Images are `object-fit: cover`, edge to edge, non-draggable and non-selectable. Absolutely positioned by JS, never CSS columns — CSS columns lay out top-to-bottom per column, which destroys keyboard and reading order. Key tiles on identity (column, repetition, slot), **never** on pixel position.
+28px radius, Obsidian `#000000` fill, `object-fit: cover`, no border, no shadow, no hover lift. Absolutely positioned by JS, never CSS columns — CSS columns lay out top-to-bottom per column, which destroys keyboard and reading order. Key tiles on identity (column, repetition, slot), **never** on pixel position.
 
 ### Note Tile
-**Role:** A typed note in the grid
+**Role:** A typed note, holding its own against a photograph
 
-The one filled surface on the canvas: `--raised` background, 14px padding, Inter 13px at 1.45 line-height and -0.01em, left-aligned, clipped at the tile bound. A note has no image to carry it, so the fill is what lets it hold its own against a photograph in the next column.
+Carbon `#1d1d1f` fill at a 28px radius with 16px padding. The first line is a lede in SF Pro Display 32px/600 at 1.13 line-height and 0.128px tracking; the remainder is SF Pro Text 14px/400 in Porcelain at 1.43. A photograph is carried by its own content, so a note is given the one filled sheet and the one piece of display type on the canvas, and the grid stays balanced.
 
-### Hover Veil
+### Tile Hover Veil
 **Role:** Deferred metadata over a tile
 
-An inset panel at `color-mix(in srgb, var(--bg) 86%, transparent)`, centred column, 5px gaps, fading in over 140ms on hover only. Carries the human-readable match reason (`similar wording`, `looks similar`, `text match`, `tagged`) and a muted 12px tag line. Nothing in the veil is ever shown permanently on the card.
+An inset panel at `color-mix(in srgb, #000000 72%, transparent)`, 28px radius to match its tile, fading in over 140ms on hover only. Carries the human-readable match reason — `similar wording`, `looks similar`, `text match`, `tagged` — in Porcelain SF Pro Text 12px, over an Ash tag line. Nothing in the veil is ever shown permanently on the tile.
 
-### Info Disc
-**Role:** Open details without leaving the canvas
-
-A 20px chrome-recipe disc at the tile's top-right, mono 11px italic `i`, `opacity: 0` until the tile is hovered or it takes focus. Fills with Ember and white on its own hover — the one place the accent becomes a background.
-
-### Tag Pill
+### Tag Label
 **Role:** A tag plus its provenance
 
-3px radius, 1px 6px padding, mono, 1.6 line-height, 4px internal gap.
+**Text-only, no container**, following the reference's treatment of status annotations. SF Pro Text 12px, 16px line-height, -0.264px tracking.
 
 | State | Treatment |
 |---|---|
-| human | 1px solid `--border`, `--text`, full opacity |
-| machine, accepted | 1px dotted `--border`, `--muted`, 0.75 opacity |
-| machine, pending | 1px dashed `--warn`, `--warn` text, confidence in mono — `wireframe 0.62` |
-| hover, any | confidence and source in a mono tooltip; `×` removes |
+| human | Porcelain `#f5f5f7`, weight 600 |
+| machine, accepted | Ash `#86868b`, weight 400 |
+| machine, pending | Copper `#b64400`, weight 400, with the confidence following in Optical Yellow — `wireframe 0.62` |
+| selected | Electric Link `#2997ff` |
+| hover, any | source and confidence in a translucent Steel `#333336` tooltip at a 9999px radius; `×` removes |
 
-Border style alone encodes provenance. No colour-coding, no legend, no badge containers.
+Weight and colour carry provenance where border style used to. The Review overlay is the one exception: there a pending tag takes a 1px dashed Copper outline at a 9999px radius, because that surface is about acting on tags and needs the hit target to be visible.
 
 ### Relation / Sort Toggle
 **Role:** A small set of mutually exclusive modes
 
-A 2px-gap row of transparent 999px capsules with a 0.8px transparent border, mono 12px `--muted`, 6–7px by 12–13px padding. The selected one — and only it — takes a `--bg` fill and the chrome hairline, so the row stays monochrome and the active state is a surface rather than a colour.
+A row of transparent 9999px pills, each with a 1px Slate `#6e6e73` outline and an Ash SF Pro Text 12px/500 label. The selected one — and only it — takes a Carbon `#1d1d1f` fill and a Porcelain label. The row stays monochrome; Signal Blue is not spent here, because a sort order is not a primary action.
 
-### Summary Line
+### Result Strip
 **Role:** What the current result set is
 
-A 42px chrome capsule 18px below the chrome, left-aligned, `width: max-content`, mono `--muted` with the count in `--text` at weight 500. Retriever names never appear here — the label is the same human wording the veil uses. Seed counts take Ember.
+Adapted from the reference's announcement strip: Carbon `#1d1d1f`, 72px tall, SF Pro Text 14px/400 in Porcelain with 20px line-height and -0.224px tracking, the count in weight 600. Embedded controls — clear search, change sort — render as Electric Link `#2997ff`. Retriever identifiers never appear; the label is the same human wording the veil uses.
 
 ### Related Bar
 **Role:** Names the subject of an orbit
 
-A 54px chrome capsule in the same slot as the summary line: a 40px circular thumbnail (or a `--bg` disc for a note), the title in Inter 13px ellipsised at 34vw, a muted relation count, the similar/tag toggle, and a 30px round close. Never a second header. Edge kind and weight are plumbing — they live in `title` attributes, not on the surface.
+A contained Graphite `#0e0e0e` bar at a 20px radius with a 1px `#282828` keyline, in the chrome family and never a second header. A 40px circular thumbnail, the title in SF Pro Display 19px/600 Porcelain, the relation count in Ash, the similar/tag toggle, and a 36px-radius round close. Edge kind and weight are plumbing — they live in `title` attributes, not on the surface.
 
 ### Focus Overlay
 **Role:** Everything known about one item
 
-Inset 10px from top, right and bottom, `min(620px, 100vw − 20px)` wide, `--surface` fill, 20px radius, chrome hairline, `--chrome-shadow` plus `0 18px 50px rgba(0,0,0,0.16)`. Enters with a 240ms 16px slide. A `--bg`-tinted scrim at 78% sits behind it so the canvas stays visible. Hero media is capped at `52vh` with `object-fit: contain` — a 2:3 photo at full width otherwise pushes title, tags and caption below the fold on open. Below 660px it spans both edges. Lock `documentElement`, not `body`, or the canvas scrolls behind a stationary panel.
+A Carbon `#1d1d1f` panel at a 28px radius with **no shadow**, inset 24px from top, right and bottom, `min(680px, 100vw − 48px)` wide. The title is SF Pro Display 28px/600 at 0.196px tracking; support text is Ash. Hero media sits in an Obsidian well at a 28px radius, capped at `52vh` with `object-fit: contain` — a 2:3 photo at full width otherwise pushes title, tags and caption below the fold on open. Tabs — OCR, entities, graph — are outlined pills. Lock `documentElement`, not `body`, or the canvas scrolls behind a stationary panel.
 
 ### Command Palette
 **Role:** The only navigation
 
-Centred at 18vh, `min(640px, 100vw − 32px)`, `--surface`, 1px `--border`, 4px radius. A mono tab row (search ↔ new note) over a borderless Inter 18px input. The active tab is marked by an Ember border, the only accent in the overlay. `⌘K` / `Ctrl-K` opens, `Tab` switches, `⌘↵` saves, `Esc` closes.
+A Carbon `#1d1d1f` panel at a 28px radius, centred at 18vh, `min(680px, 100vw − 48px)` wide, over an Obsidian scrim at 70%. A field in the Search Field recipe sits above a result list; the active tab is marked by a Porcelain label over a Steel fill, and the confirm action is the single Filled Action Pill. `⌘K` / `Ctrl-K` opens, `Tab` switches search ↔ new note, `⌘↵` saves, `Esc` closes.
 
-### Graph Panel
+### Graph Well
 **Role:** The neighbourhood of one item
 
-Full-width SVG on `--raised` with a 1px `--border` and a 4px radius. Node labels in mono 9px `--muted`; a node's rect strokes Ember on hover. Drops to one hop under 400px.
+An Obsidian `#000000` well at a 28px radius inside the focus panel. Edges are Steel `#333336` 1px; the highlighted edge and a hovered node take Electric Link `#2997ff`. Node labels are SF Pro Text 12px in Ash. Drops to one hop below 430px.
 
-### Dropzone
-**Role:** Drag-and-drop target
+### Processing Tile
+**Role:** An item still moving through the pipeline
 
-Appears on dragover only: `inset: 10px`, a 1.5px dashed Ember border, 8px radius, `--bg` at 72% opacity, centred Ember label. The whole window is the target.
+A Carbon `#1d1d1f` tile at a 28px radius with a 2px indeterminate Signal Blue `#0071e3` bar along its top edge. Fields pop in as SSE stages land. A stage that fails marks its row in the focus panel with Alert `#ff453a` text; a stage that is simply not installed takes Ash, because absence is not failure.
 
-### Orbit Focus Lift
+### Orbit Subject Ring
 **Role:** Marks the item an orbit grew from
 
-`0 0 0 0.8px var(--chrome-border), 0 14px 38px rgba(0,0,0,0.22)`. Lift, never colour — an orange stripe across a photograph is the one thing the reference would never do.
+A 1px Slate `#6e6e73` ring — `box-shadow: 0 0 0 1px #6e6e73` used as an outline, not as elevation. No drop shadow and no accent stripe: a blue line across a photograph is the one thing this reference would never do.
+
+### Empty Canvas Stage
+**Role:** First run, and an empty search
+
+The hero of the product. A full-bleed uninterrupted Obsidian field with a centred SF Pro Display statement at 80px/600, 84px line-height and -1.2px tracking in Porcelain, one Ash line of SF Pro Text 17px beneath it, and a single Filled Action Pill. This is the only place display-xl appears, and it is what makes an empty library feel like a stage rather than a blank page.
 
 ## Do's and Don'ts
 
 ### Do
-- Keep the page ground plain `#FFFFFF` and let the chrome be the only warm surface.
-- Give every clickable control the one chrome recipe — 999px, `--chrome`, 0.8px hairline, inner highlight, soft shadow.
-- Hold tiles at a 3px radius with no border, no shadow and no hover lift.
-- Set all machine-produced text in JetBrains Mono and all human text in Inter.
-- Keep the gutter at 12px on both axes and the column pitch exactly `vw / n`.
-- Encode tag provenance with border style — solid, dotted, dashed — not colour.
-- Spend Ember only on focus rings, active state, the selected tag, the highlighted edge, the ingest queue and the dropzone.
-- Mark the subject of an orbit with a hairline and a drop shadow.
-- Name a match in human words — `similar wording`, `looks similar`, `text match`, `tagged` — and put it in the hover veil.
+- Use Obsidian `#000000` as the canvas ground and as the fill behind every image tile and media well.
+- Set text on dark surfaces in Porcelain `#f5f5f7` and all metadata in Ash `#86868b`.
+- Use 28px corners for tiles, the focus panel, the palette and the graph well.
+- Keep the floating chrome and the related bar at a 20px radius with a 1px `#282828` keyline.
+- Reserve Signal Blue `#0071e3` for the single filled primary action in view.
+- Use Electric Link `#2997ff` for interactive text on Obsidian and Carbon, and Cobalt `#0066cc` on White.
+- Carry tag provenance with weight and colour — Porcelain 600 human, Ash 400 accepted, Copper pending.
+- Use SF Pro Display 80px/600 at -1.2px tracking for the empty-canvas statement, and 32px/600 for a note lede.
+- Hold the grid at comfortable density: a 300px column target and a 24px gutter, fluid at every width.
+- Mark the subject of an orbit with a 1px Slate ring.
 - Hold the focus hero at `max-height: 52vh` with `object-fit: contain`.
-- Keep a 16px side gutter at every width down to 400px, set once on the wrapper.
+- Name a match in human words and put it in the hover veil.
 
 ### Don't
-- Do not tint the page ground: every photograph picks up a cast from warm paper behind it.
-- Do not use Ember for body text or any label — it fails 4.5:1 on white.
-- Do not give tiles borders, shadows, hover lifts or radii above 3px.
-- Do not vary column widths to make the grid look livelier — it breaks the vertical rhythm the moment you pan sideways.
-- Do not surface retriever identifiers (`text_vec`, `img_vec`, `lexical`) or edge weights (`semantic 0.715`) anywhere on a card.
-- Do not put a badge on every card: a permanent chip over every photograph is pure noise, because every result matches *something*.
-- Do not place a second bar under the chrome — floating capsules in the same slot, never a header stack.
-- Do not use pure `#000` or `#FFF` for text.
-- Do not introduce gradients, skeleton shimmer, hover fades or page transitions.
+- Do not put shadows on tiles, panels or chrome — separate layers with 1px keylines and the Obsidian-to-Carbon surface shift instead.
+- Do not use Signal Blue `#0071e3` as a tile fill, a section background, or an active-sort state.
+- Do not put more than one filled blue control on screen at a time.
+- Do not round tiles below 28px or replace control pills with rectangular buttons.
+- Do not use White `#ffffff` for dark-surface text when Porcelain `#f5f5f7` is available, and never pure `#000` for text.
+- Do not use Copper `#b64400` for errors, primary controls or headings — it annotates newness.
+- Do not introduce gradients beyond the Carbon-to-Obsidian focus-panel fade.
+- Do not reintroduce monospace for labels; it survives only for literal code and layout dumps.
+- Do not keep the old compact grid under this geometry — a 28px corner on a 172px tile reads as a lozenge.
+- Do not surface retriever identifiers (`text_vec`, `img_vec`, `lexical`) or edge weights (`semantic 0.715`) on a tile.
 - Do not key tiles on pixel position, or Svelte destroys and recreates every `<img>` on every wheel event.
 - Do not call `setPointerCapture` on the canvas — the tile underneath then never receives its click.
 
 ## Elevation
 
-Elevation is a single recipe reused at three intensities, never a scale. The chrome shadow (`--chrome-shadow`: two inset lines plus `0 1px 8px` at 5% light / 45% dark) separates every floating control from the canvas. The focus panel adds `0 18px 50px rgba(0,0,0,0.16)` on top of it because it is the only surface that must sit above *everything*. The orbit subject takes `0 14px 38px rgba(0,0,0,0.22)` with a 0.8px ring. Nothing else in the product casts a shadow — tiles, pills and the grid are flat by rule, and layers are separated by surface shifts and 0.8px hairlines instead.
+Elevation is almost entirely absent. Layers separate through the black-to-charcoal surface shift (Obsidian canvas → Graphite chrome → Carbon panel), 1px keylines, and 28px geometry. The only shadow-like treatments permitted are outlines: `0 0 0 1px #282828` on the floating chrome and related bar, and `0 0 0 1px #6e6e73` on compact outlined controls and the orbit subject.
+
+This removes the previous system's defining trick — the inner-highlight-plus-drop-shadow capsule recipe that made chrome read as a physical object. Under this reference an object is made by its fill and its keyline, not by its light.
 
 ## Surfaces
 
-- **Paper Canvas** (`#FFFFFF` / `#0B0B0C`) — `position: fixed; inset: 0`, `cursor: grab`. The page itself; nothing reserves vertical space above it.
-- **Chrome Capsule** (`#F2F0EE` / `#191919`) — every floating control, resting on the canvas rather than docked to an edge.
-- **Raised Fill** (`#F2F0EE` / `#1C1C1F`) — note tiles, tab rests, code and layout dumps, the graph ground.
-- **Overlay Shelf** (`#FFFFFF` / `#141416`) — focus panel and command palette, each over a `--bg`-tinted scrim at 70–78%.
+- **Obsidian Canvas** (`#000000`) — `position: fixed; inset: 0`, `cursor: grab`. The infinite field, image tiles, media wells, the graph stage.
+- **Graphite Chrome** (`#0e0e0e`) — the floating bar and the related bar, contained at a 20px radius.
+- **Carbon Panel** (`#1d1d1f`) — note tiles, focus overlay, command palette, result strip.
+- **White Light Mode** (`#ffffff`) — the light-theme counterpart: White tiles and panels, Carbon `#1d1d1f` text, Cobalt `#0066cc` links, the same 28px geometry and the same shadowless rule.
 
 ## Motion
 
-Two budgets, both collapsing to instant under `prefers-reduced-motion: reduce`.
+Two budgets, both collapsing to instant under `prefers-reduced-motion: reduce`. The reference is a page that scrolls; this is a canvas that pans, so motion is the one system iwashere brings of its own.
 
-**Canvas motion** is a target/actual split: `tx/ty` is where the canvas is heading, `ox/oy` is what is drawn, and a rAF loop closes the gap with `k = 1 − exp(−dt/tau)` — framerate-independent, identical at 60 and 144 Hz. `TAU_FOLLOW = 95` for the wheel, `TAU_GLIDE = 230` for released momentum. A 400px wheel delta spreads over ~30 frames on a decaying curve rather than jumping. A drag moves target and actual together so the canvas stays welded to the cursor, then hands its velocity over.
+**Canvas motion** is a target/actual split: `tx/ty` is where the canvas is heading, `ox/oy` is what is drawn, and a rAF loop closes the gap with `k = 1 − exp(−dt/tau)` — framerate-independent, identical at 60 and 144 Hz. `TAU_FOLLOW = 95` for the wheel, `TAU_GLIDE = 230` for released momentum. A drag moves target and actual together so the canvas stays welded to the cursor, then hands its velocity over.
 
-**The orbit** grows rather than replaces: the clicked tile stays put and its neighbours scale up around it in rings, staggered by rank so the ring blooms outward. Ring radius is derived from the actual tiles — each is placed at an angle proportional to its own footprint, and a ring clears the one inside it. Sizing by width alone collides, because a portrait tile is up to 1.55× taller than wide.
+**The orbit** grows rather than replaces: the clicked tile stays put and its neighbours scale up around it in rings, staggered by rank. Ring radius is derived from the actual tiles — each is placed at an angle proportional to its own footprint, and a ring clears the one inside it. Sizing by width alone collides, because a portrait tile is up to 1.55× taller than wide.
 
-Everything else: 140ms colour and opacity on chrome and veils, 160ms transform on the inline disc, 240ms on the focus slide, all on `cubic-bezier(0.2, 0.8, 0.2, 1)`. Transitions are scoped to the orbit and must never apply to library tiles — the keyed list churns constantly as tiles cross the cull window, and animating each one leaves a permanent backlog of entering and dying nodes.
+Everything else is near-instant: 140ms on the hover veil, 240ms on the focus panel. No hover fades on tiles, no skeleton shimmer, no page transitions. Transitions must never apply to library tiles — the keyed list churns constantly as tiles cross the cull window, and animating each one leaves a permanent backlog of entering and dying nodes.
 
 ## Imagery
 
-Imagery is whatever the user dumped in, which means it cannot be art-directed — screenshots, phone photos, diagrams, scans and UI crops all land in the same grid. The design's job is to stay out of its way: no tint behind it, no frame around it, no chrome on top of it. Tiles crop to `cover` so the grid rhythm holds regardless of source aspect ratio; the focus hero switches to `contain` because that is the one place the whole image matters. Processing cards show a skeleton with a thin indeterminate Ember bar and fill in as SSE stages land. Near-duplicate clusters collapse to one tile with a mono `×3` badge. Icons are 1.3px-stroke monochrome line glyphs at 15px, `currentColor`, with no fills except where a theme icon deliberately inverts.
+Imagery is whatever the user dumped in, which means it cannot be art-directed — screenshots, phone photos, diagrams, scans and UI crops all land in the same grid. The Obsidian ground is the strongest argument for this system: black is the one ground that casts nothing back onto arbitrary photography, where the previous warm-white paper tinted every image placed on it. Tiles crop to `cover` inside 28px frames so the grid rhythm holds regardless of source aspect ratio; the focus hero switches to `contain` in an Obsidian well, because that is the one place the whole image matters. Icons are thin monochrome utility glyphs in Ash, resolving to Porcelain on hover. Near-duplicate clusters collapse to one tile with a Steel `×3` marker at a 9999px radius. Optical Yellow and Verified green operate as technical cues on confidence and stage state — not as a broad illustration palette.
 
 ## Layout
 
-The canvas *is* the page: `fixed inset-0`, panning forever in both directions over a finite library, with the chrome floating on top so nothing reserves vertical space. Columns are indexed by any integer, so there is no left or right edge; column `c` draws from the item list at a different rotation, so panning sideways keeps turning up new things rather than repeating a block. Each column wraps modulo its own stack height, so there is no global tile boundary to line up and therefore no seam. Cull to the viewport, then cap on a tile budget — 140 in the shipped canvas — because 24 columns × every repetition intersecting a tall viewport generates around a thousand absolutely-positioned nodes otherwise.
+The canvas *is* the page: `fixed inset-0`, panning forever in both directions over a finite library, fluid at every width with no max and no horizontal page scroll. Columns are indexed by any integer, so there is no left or right edge; column `c` draws from the item list at a different rotation, so panning sideways keeps turning up new things rather than repeating a block. Each column wraps modulo its own stack height, so there is no global tile boundary and therefore no seam. Cull to the viewport, then cap on a tile budget — 140 in the shipped canvas — because 24 columns × every repetition intersecting a tall viewport generates around a thousand absolutely-positioned nodes otherwise.
 
-Chrome sits 10px from the top and both sides: the search capsule flexed wide with round buttons beside it, and one capsule 18px beneath it — summary line or related bar, never both. Clicking a tile grows an orbit of its neighbours around it in place; the info disc opens the focus panel down the right edge. Below 660px the focus panel spans both edges; at 400px the grid is two columns and the graph drops to one hop.
+The floating chrome sits 24px from the top and both sides, with one strip 24px beneath it — result strip or related bar, never both. Clicking a tile grows an orbit of its neighbours in place; the info marker opens the focus panel down the right edge. An empty canvas becomes the display-xl hero stage. Below 660px the focus panel spans both edges; at 430px the grid is one column and the graph drops to one hop. Minimum 24px side gutter at every width, set once on the app wrapper.
 
-## Reference Points
+## What this changes in the build
 
-- **cosmos.so** — The direct reference: uniform `vw / n` pitch, 12px gutters, 3px tiles, no card chrome, white ground, and the floating capsule recipe. It is vertical masonry with `overflowX: hidden`; the two-axis pan and the orbit are this project's own additions.
-- **Are.na** — Shares the premise that a saved image and a typed note are the same kind of object, and that provenance matters more than decoration.
-- **Raycast** — The same conviction that a single keyboard-first palette can replace navigation entirely, and the same monospace-for-metadata discipline.
-- **Apple Photos** — Edge-to-edge uniform-pitch media grids where the interface disappears behind the content and controls float as translucent capsules.
+`web/src/lib/design/tokens.css` and every component style block are written against the previous system. The deltas, in order of blast radius:
+
+| | now | under this reference |
+|---|---|---|
+| ground | `#FFFFFF` light-first | Obsidian `#000000`, dark-first |
+| accent | Ember `#FF5A1F`, one token | Signal Blue `#0071e3` fills + Electric Link `#2997ff` text |
+| chrome | `--chrome-shadow` capsule recipe | Graphite fill + 1px `#282828` keyline, no shadow |
+| tile radius | 3px | 28px |
+| column target / gutter | 172px / 12px | 300px / 24px |
+| metadata face | JetBrains Mono | SF Pro Text 12px in Ash |
+| tag provenance | border style (solid/dotted/dashed) | weight and colour |
+| state colours | `--ok --warn --miss --err` | Verified / Copper / Ash / Alert |
+
+`--chrome-shadow` disappears entirely and takes the visual logic of six controls with it; that is the single largest edit. The dark-token drift noted earlier — `tokens.css` defines dark twice and the two blocks disagree on six values, so system-dark and toggled-dark are not currently the same theme — resolves itself here, since dark becomes the one authored palette.
+
+## Similar Brands
+
+- **Apple** — the source of this system: black product stages, oversized SF Pro Display, 28px media geometry, shadowless elevation, and blue confined to the action path.
+- **Cosmos** — the structural reference for the canvas itself: uniform `vw / n` pitch, edge-to-edge tiles, zero card chrome, controls floating on the field rather than docked above it.
+- **Are.na** — shares the premise that a saved image and a typed note are the same kind of object, and that provenance matters more than decoration.
+- **Linear** — a dark monochrome product surface with one rationed accent, dense quiet metadata, and a keyboard palette standing in for navigation.
