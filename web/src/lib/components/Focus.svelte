@@ -1,7 +1,25 @@
 <script lang="ts">
+  import { fade, fly } from "svelte/transition";
+  import { cubicOut } from "svelte/easing";
   import { api, type ItemDetail, type Item } from "../api";
   import TagPill from "./TagPill.svelte";
   import Graph from "./Graph.svelte";
+
+  /* The panel used to enter on a CSS @keyframes and leave on nothing at
+     all: App unmounts it the instant focusId goes null, and a CSS
+     animation cannot play on a node that is already out of the DOM. So
+     opening glided and closing was a hard cut — measured at one frame,
+     full opacity to absent, with the scrim going with it.
+
+     Svelte transitions run in both directions and, crucially, hold the
+     unmount until the out-transition finishes, which is the part CSS
+     could not do. cubicOut stands in for the --ease token because a
+     transition needs an easing FUNCTION, not a CSS curve; the two are
+     indistinguishable over 240ms. */
+  const reduced = typeof matchMedia === "function"
+    && matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const PANEL_MS = reduced ? 0 : 240;
+  const SCRIM_MS = reduced ? 0 : 160;
 
   let { id, onclose, onopen }:
     { id: number; onclose: () => void; onopen: (id: number) => void } = $props();
@@ -32,8 +50,10 @@
   });
 </script>
 
-<div class="scrim" onclick={onclose} role="presentation"></div>
-<div class="focus" role="dialog" aria-modal="true" aria-label="item detail">
+<div class="scrim" onclick={onclose} role="presentation"
+     transition:fade={{ duration: SCRIM_MS }}></div>
+<div class="focus" role="dialog" aria-modal="true" aria-label="item detail"
+     transition:fly={{ x: 16, opacity: 0, duration: PANEL_MS, easing: cubicOut }}>
   {#if !item}
     <p class="meta muted pad">loading…</p>
   {:else}
@@ -134,10 +154,10 @@
     background: var(--surface);
     border: 1px solid var(--keyline);
     border-radius: var(--r-panel); z-index: 41; overflow-y: auto;
-    animation: slide 240ms var(--ease);
   }
-  @keyframes slide { from { transform: translateX(16px); opacity: 0; } }
-  @media (prefers-reduced-motion: reduce) { .focus { animation: none; } }
+  /* Enter and exit both live on the `transition:` directives in the
+     markup — a CSS animation here would double up with them on open and
+     still do nothing on close. */
   @media (max-width: 660px) {
     .focus { left: var(--inset); width: auto; }
   }

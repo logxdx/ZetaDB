@@ -176,7 +176,9 @@ A contained Graphite `#0e0e0e` bar at a 20px radius with a 1px `#282828` keyline
 ### Focus Overlay
 **Role:** Everything known about one item
 
-A Carbon `#1d1d1f` panel at a 28px radius with **no shadow**, inset 24px from top, right and bottom, `min(680px, 100vw − 48px)` wide. The title is SF Pro Display 28px/600 at 0.196px tracking; support text is Ash. Hero media sits in an Obsidian well at a 28px radius, capped at `52vh` with `object-fit: contain` — a 2:3 photo at full width otherwise pushes title, tags and caption below the fold on open. Tabs — OCR, entities, graph — are outlined pills. Lock `documentElement`, not `body`, or the canvas scrolls behind a stationary panel.
+A Carbon `#1d1d1f` panel at a 28px radius with **no shadow**, inset 24px from top, right and bottom, `min(680px, 100vw − 48px)` wide. The title is SF Pro Display 28px/600 at 0.196px tracking; support text is Ash. Hero media sits in an Obsidian well at a 28px radius, capped at `52vh` with `object-fit: contain` — a 2:3 photo at full width otherwise pushes title, tags and caption below the fold on open.
+
+It enters **and leaves** on a 240ms 16px slide, with the scrim crossfading over 160ms. Both directions must be driven by Svelte `transition:` directives, not a CSS `@keyframes`: the panel is unmounted the instant focus clears, and CSS cannot animate a node that is already out of the DOM. A transition also holds the unmount until the out-leg finishes, which is the part CSS has no way to do. Tabs — OCR, entities, graph — are outlined pills. Lock `documentElement`, not `body`, or the canvas scrolls behind a stationary panel.
 
 ### Command Palette
 **Role:** The only navigation
@@ -256,7 +258,9 @@ Two budgets, both collapsing to instant under `prefers-reduced-motion: reduce`. 
 
 **The orbit** grows rather than replaces: the clicked tile stays put and its neighbours scale up around it in rings, staggered by rank. Ring radius is derived from the actual tiles — each is placed at an angle proportional to its own footprint, and a ring clears the one inside it. Sizing by width alone collides, because a portrait tile is up to 1.55× taller than wide. Ring tiles start at 300px and step down by 26px per ring to a **floor of 190px**: every tile carries a 28px corner, and below about 190px that corner stops reading as a frame and starts reading as a lozenge. The subject itself is 360px.
 
-Everything else is near-instant: 140ms on the hover veil, 240ms on the focus panel. No hover fades on tiles, no skeleton shimmer, no page transitions. Transitions must never apply to library tiles — the keyed list churns constantly as tiles cross the cull window, and animating each one leaves a permanent backlog of entering and dying nodes.
+Everything else is near-instant: 140ms on the hover veil, 240ms on the focus panel in both directions, 160ms on its scrim. CSS transitions take the `--ease` token directly; Svelte's JS transitions take `cubicOut`, which is the same curve for practical purposes — a transition needs an easing *function*, not a CSS bezier. No hover fades on tiles, no skeleton shimmer, no page transitions.
+
+**An animation that only plays one way is a bug, not a style.** The focus panel shipped with a CSS enter keyframe and no exit, which measured as a one-frame cut on close: present at opacity 1, absent on the next frame. Anything that animates in must animate out. Transitions must never apply to library tiles — the keyed list churns constantly as tiles cross the cull window, and animating each one leaves a permanent backlog of entering and dying nodes.
 
 ## Imagery
 
@@ -289,7 +293,9 @@ This system is implemented, not proposed. What changed:
 
 Two second sources of truth were removed on the way. `tokens.css` had authored the off-theme palette twice in full and the two copies had drifted on six values, so system-dark and toggled-dark were quietly different themes; the light values now live once in a `--light-*` block and are only *assigned* twice. And `--tile-gap` / `--col` were deleted rather than carried over — the grid is laid out in JS, and a copy of its numbers in CSS is free to drift from the ones the layout actually uses. They live in `Canvas.svelte` as `GAP` and `TARGET`.
 
-Verified: `vite build` clean, `svelte-check` 115 files / 0 errors / 0 warnings, 45 Python tests passing, and every colour pair in this document measured against WCAG. **Not yet opened in a browser** — and this project's own history (§17.5) says a UI is not tested until it has been looked at.
+Verified: `vite build` clean, `svelte-check` 115 files / 0 errors / 0 warnings, 45 Python tests passing, every colour pair in this document measured against WCAG, and the 25-check API smoke test green against the real library.
+
+Then driven in headless Chrome over CDP, in both themes, which is where the close-transition bug surfaced — exactly as §17.5 predicts. Confirmed on the live page: body `#000000`, tile radius 28px, chrome `#0e0e0e` at a 20px radius with `box-shadow: none`, panel `#1d1d1f` with `box-shadow: none`, the add control at `#0071e3`, four columns at 1400px, and no horizontal scroll. Still unverified: narrow widths below 660px, the orbit, and search.
 
 ## Similar Brands
 
