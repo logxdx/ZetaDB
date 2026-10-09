@@ -1007,6 +1007,13 @@ One card species. A text note and an image are the same object in the grid — t
 
 ### 13.3 Design tokens
 
+> **[M7] Superseded.** The visual system was re-pointed at the Apple
+> product-page reference: Obsidian ground, SF Pro, 28px geometry, no
+> shadows, blue confined to one filled action. The shipped tokens are in
+> `web/src/lib/design/tokens.css` and the system that governs them is
+> [DESIGN.md](DESIGN.md). What follows is the superseded light-first
+> system, kept because §17.6–17.8 reason about it.
+
 ```css
 :root {
   --bg:        #FAF9F7;   --surface:   #FFFFFF;

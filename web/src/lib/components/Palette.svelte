@@ -38,7 +38,7 @@
 {#if open}
   <div class="scrim" onclick={() => (open = false)} role="presentation"></div>
   <div class="palette" role="dialog" aria-modal="true" aria-label="add or search">
-    <div class="tabs mono">
+    <div class="tabs meta">
       <button class:on={mode === "note"} onclick={() => (mode = "note")}>write text</button>
       <button onclick={upload}>upload files</button>
       <button class:on={mode === "search"} onclick={() => (mode = "search")}>search</button>
@@ -56,29 +56,63 @@
 {/if}
 
 <style>
-  .scrim { position: fixed; inset: 0; background: color-mix(in srgb, var(--bg) 70%, transparent); z-index: 50; }
+  .scrim {
+    position: fixed; inset: 0; z-index: 50;
+    background: color-mix(in srgb, var(--bg) 70%, transparent);
+  }
+  /* A Carbon panel at the panel radius, with no shadow — it is separated
+     from the canvas by the scrim and a keyline, not by elevation. */
   .palette {
     position: fixed; top: 18vh; left: 50%; transform: translateX(-50%);
-    width: min(640px, calc(100vw - 32px)); z-index: 51;
-    background: var(--surface); border: 1px solid var(--border);
-    border-radius: var(--radius); overflow: hidden;
+    width: min(680px, calc(100vw - var(--inset) * 2)); z-index: 51;
+    background: var(--surface);
+    border: 1px solid var(--keyline);
+    border-radius: var(--r-panel); overflow: hidden;
   }
-  .tabs { display: flex; align-items: center; gap: 6px; padding: 8px 10px;
-          border-bottom: 1px solid var(--border); }
-  .tabs button { background: none; border: 1px solid transparent; border-radius: 3px;
-                 color: var(--muted); padding: 2px 8px; cursor: pointer;
-                 font-family: var(--font-mono); font-size: var(--fs-xs); }
+  .tabs {
+    display: flex; align-items: center; gap: 6px;
+    padding: 12px 14px; border-bottom: 1px solid var(--border);
+  }
+  /* The active tab is a filled surface, not a coloured outline: blue is
+     reserved for the action, never for which pane you are looking at. */
+  .tabs button {
+    background: none; border: 0; border-radius: var(--r-pill);
+    color: var(--muted); padding: 5px 12px; cursor: pointer;
+    font-family: var(--font-content); font-size: var(--fs-xs);
+    font-weight: 500; letter-spacing: var(--ls-ctl);
+    transition: color 140ms var(--ease), background 140ms var(--ease);
+  }
   .tabs button:hover { color: var(--text); }
-  .tabs .on { color: var(--text); border-color: var(--accent); }
+  .tabs .on { color: var(--text); background: var(--steel); }
   .spacer { flex: 1; }
-  .hint { color: var(--muted); font-family: var(--font-mono); font-size: var(--fs-xs); }
-  .x { font-family: var(--font-content); font-size: var(--fs-md);
-       line-height: 1; padding: 1px 6px; }
-  input, textarea {
-    width: 100%; border: 0; outline: none; resize: none;
-    background: var(--surface); color: var(--text);
-    font-family: var(--font-content); font-size: var(--fs-lg);
-    padding: 14px 16px; line-height: 1.5;
+  .hint {
+    color: var(--muted); font-size: var(--fs-xs);
+    letter-spacing: var(--ls-12);
   }
-  textarea { font-size: var(--fs-md); }
+  .x { font-size: var(--fs-md); line-height: 1; padding: 2px 8px; }
+
+  /* The field takes the reference's device-selector recipe: a barely-lit
+     fill, a Slate hairline, and a blue focus outline at a 1px offset. */
+  input, textarea {
+    display: block; width: calc(100% - var(--gutter) * 2);
+    margin: var(--gutter); resize: none;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--outline);
+    color: var(--text);
+    font-family: var(--font-content);
+    font-size: var(--fs-md); line-height: 1.47;
+    letter-spacing: var(--ls-17);
+  }
+  input {
+    border-radius: var(--r-input); padding: 12px 24px;
+  }
+  /* A multi-line field cannot take the 980px pill, so it takes the panel
+     corner instead — the one place the two radii are not interchangeable. */
+  textarea {
+    border-radius: var(--r-panel); padding: 16px 20px;
+  }
+  input:focus-visible, textarea:focus-visible {
+    outline: 1px solid var(--blue); outline-offset: 1px;
+  }
+  input::placeholder, textarea::placeholder { color: var(--muted); }
 </style>

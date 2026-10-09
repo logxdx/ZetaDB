@@ -35,10 +35,10 @@
 <div class="scrim" onclick={onclose} role="presentation"></div>
 <div class="focus" role="dialog" aria-modal="true" aria-label="item detail">
   {#if !item}
-    <p class="mono muted pad">loading…</p>
+    <p class="meta muted pad">loading…</p>
   {:else}
     <header>
-      <span class="mono muted">#{item.id} · {item.kind} · {item.status}</span>
+      <span class="meta muted">#{item.id} · {item.kind} · {item.status}</span>
       <div class="spacer"></div>
       <button class="close" onclick={onclose} aria-label="close">×</button>
     </header>
@@ -56,7 +56,7 @@
         </div>
       {/if}
 
-      <nav class="tabs mono">
+      <nav class="tabs meta">
         <button class:on={tab === "content"} onclick={() => (tab = "content")}>content</button>
         {#if item.layout_text}
           <button class:on={tab === "ocr"} onclick={() => (tab = "ocr")}>ocr</button>
@@ -68,28 +68,28 @@
         {#if item.body}<p class="prose">{item.body}</p>{/if}
         {#if item.caption}
           <p class="prose caption">{item.caption}</p>
-          <p class="mono muted">caption · {item.caption_model ?? "?"}</p>
+          <p class="meta muted">caption · {item.caption_model ?? "?"}</p>
         {/if}
         {#if !item.body && !item.caption}
-          <p class="mono muted">no description yet</p>
+          <p class="meta muted">no description yet</p>
         {/if}
         {#if item.entities.length}
-          <h3 class="mono">entities</h3>
-          <ul class="ents mono">
+          <h3 class="meta">entities</h3>
+          <ul class="ents meta">
             {#each item.entities as e}
               <li><span class="k">{e.kind}</span> {e.value}</li>
             {/each}
           </ul>
         {/if}
         {#if item.todos.length}
-          <h3 class="mono">todos</h3>
-          <ul class="ents mono">
+          <h3 class="meta">todos</h3>
+          <ul class="ents meta">
             {#each item.todos as t}<li>{t.text}{#if t.due_date} · {t.due_date}{/if}</li>{/each}
           </ul>
         {/if}
         {#if item.errors.length}
-          <h3 class="mono err">stage errors</h3>
-          <ul class="ents mono err">
+          <h3 class="meta err">stage errors</h3>
+          <ul class="ents meta err">
             {#each item.errors as e}<li>{e.stage}: {e.error}</li>{/each}
           </ul>
         {/if}
@@ -101,7 +101,7 @@
       {/if}
 
       {#if related.length}
-        <h3 class="mono">related</h3>
+        <h3 class="meta">related</h3>
         <div class="related">
           {#each related as r (r.id)}
             <!-- The edge kind and weight are plumbing; a row of thumbnails
@@ -128,66 +128,100 @@
      rounded, hairline and soft shadow — so the canvas stays visible
      behind it and nothing about the view is lost. */
   .focus {
-    position: fixed; top: 10px; right: 10px; bottom: 10px;
-    width: min(620px, calc(100vw - 20px));
-    background: var(--surface); border: 0.8px solid var(--chrome-border);
-    border-radius: 20px; z-index: 41; overflow-y: auto;
-    box-shadow: var(--chrome-shadow), 0 18px 50px rgba(0, 0, 0, 0.16);
+    position: fixed;
+    top: var(--inset); right: var(--inset); bottom: var(--inset);
+    width: min(680px, calc(100vw - var(--inset) * 2));
+    background: var(--surface);
+    border: 1px solid var(--keyline);
+    border-radius: var(--r-panel); z-index: 41; overflow-y: auto;
     animation: slide 240ms var(--ease);
   }
   @keyframes slide { from { transform: translateX(16px); opacity: 0; } }
   @media (prefers-reduced-motion: reduce) { .focus { animation: none; } }
-  @media (max-width: 660px) { .focus { left: 10px; width: auto; } }
+  @media (max-width: 660px) {
+    .focus { left: var(--inset); width: auto; }
+  }
 
   header {
-    display: flex; align-items: center; gap: 10px; padding: 12px 16px;
+    display: flex; align-items: center; gap: 10px; padding: 16px 20px;
     border-bottom: 1px solid var(--border); position: sticky; top: 0;
     background: var(--surface); z-index: 1;
   }
   .spacer { flex: 1; }
-  button { background: none; border: 0.8px solid var(--chrome-border);
-           border-radius: 999px; color: var(--muted); padding: 5px 11px;
-           cursor: pointer; font-family: var(--font-mono); font-size: var(--fs-xs);
-           transition: color 140ms var(--ease), background 140ms var(--ease); }
+  /* Outlined explore pills, the same recipe the sort and relation toggles
+     use — one family of controls, no shadow on any of them. */
+  button {
+    background: none; color: var(--muted);
+    border: 1px solid var(--outline); border-radius: var(--r-pill);
+    padding: 5px 12px; cursor: pointer;
+    font-family: var(--font-content); font-size: var(--fs-xs);
+    font-weight: 500; letter-spacing: var(--ls-ctl);
+    transition: color 140ms var(--ease), background 140ms var(--ease);
+  }
   button:hover { color: var(--text); background: var(--raised); }
-  /* The glyph carries the meaning now, so it needs the content face and a
-     square footprint rather than the mono label's padding. */
-  .close { font-family: var(--font-content); font-size: var(--fs-md);
-           line-height: 1; padding: 4px 9px; }
+  /* The glyph carries the meaning, so it needs a square footprint rather
+     than the label's padding. */
+  .close {
+    font-size: var(--fs-md); line-height: 1;
+    width: 32px; height: 32px; padding: 0;
+    display: grid; place-items: center;
+    border-radius: var(--r-compact);
+  }
 
   /* Cap the hero so the title, tags and caption are visible without
      scrolling. A 2:3 photo otherwise fills the whole panel on open. */
+  /* The hero sits in an Obsidian well, because black is the one ground
+     that casts nothing back onto an arbitrary photograph. */
   .hero {
     width: 100%; max-height: 52vh; object-fit: contain;
-    display: block; background: var(--raised);
+    display: block; background: var(--well);
   }
-  .body { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
-  .pad { padding: 16px; }
-  h2 { margin: 0; font-size: var(--fs-lg); font-weight: 600; letter-spacing: -0.01em; }
-  h3 { margin: 8px 0 0; font-size: var(--fs-xs); font-weight: 400;
-       color: var(--muted); text-transform: lowercase; }
-  .tags { display: flex; flex-wrap: wrap; gap: 4px; }
+  .body { padding: 20px; display: flex; flex-direction: column; gap: 16px; }
+  .pad { padding: 20px; }
+  h2 {
+    margin: 0; font-family: var(--font-display);
+    font-size: var(--fs-xl); font-weight: 600;
+    line-height: 1.07; letter-spacing: var(--ls-28);
+  }
+  h3 {
+    margin: 10px 0 0; font-size: var(--fs-xs); font-weight: 400;
+    letter-spacing: var(--ls-12);
+    color: var(--muted); text-transform: lowercase;
+  }
+  /* Tags are text now, with no container to separate them, so the gap has
+     to do that work on its own. */
+  .tags { display: flex; flex-wrap: wrap; gap: 4px 14px; }
   .tabs { display: flex; gap: 6px; }
-  .tabs .on { color: var(--text); background: var(--raised); }
-  .prose { margin: 0; white-space: pre-wrap; line-height: 1.6; }
+  .tabs .on { color: var(--text); background: var(--steel); }
+  .prose {
+    margin: 0; white-space: pre-wrap;
+    font-size: var(--fs-md); line-height: 1.6; letter-spacing: var(--ls-17);
+  }
   .caption { color: var(--muted); }
+  /* A literal readout, so it keeps the monospace face — the one exception
+     to metadata being set in SF Pro Text. */
   .layout {
-    margin: 0; padding: 12px; background: var(--raised); border-radius: var(--radius);
+    margin: 0; padding: 16px;
+    background: var(--well); border: 1px solid var(--border);
+    border-radius: var(--r-panel);
     font-family: var(--font-mono); font-size: var(--fs-xs); line-height: 1.45;
     overflow-x: auto; white-space: pre;
   }
   .ents { margin: 0; padding: 0; list-style: none; display: flex;
-          flex-direction: column; gap: 3px; color: var(--muted); }
-  .ents .k { color: var(--accent); margin-right: 6px; }
+          flex-direction: column; gap: 4px; color: var(--text); }
+  /* The entity kind is a label, not a link — blue would promise a
+     destination this has no way to honour. */
+  .ents .k { color: var(--muted); margin-right: 8px; }
   .err { color: var(--err); }
-  .related { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
-  .rel { flex: 0 0 96px; padding: 0; border: 0; background: none;
-         border-radius: var(--radius); overflow: hidden; display: block;
+  .related { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 4px; }
+  .rel { flex: 0 0 120px; padding: 0; border: 0; background: none;
+         border-radius: var(--r-tile); overflow: hidden; display: block;
          cursor: pointer; }
-  .rel img { width: 96px; height: 68px; object-fit: cover; display: block;
-             border-radius: var(--radius); transition: opacity 140ms var(--ease); }
+  .rel img { width: 120px; height: 86px; object-fit: cover; display: block;
+             border-radius: var(--r-tile); transition: opacity 140ms var(--ease); }
   .rel:hover img { opacity: 0.78; }
-  .reltext { display: block; padding: 8px; font-size: var(--fs-xs);
-             text-align: left; height: 68px; overflow: hidden; color: var(--text);
-             background: var(--raised); border-radius: var(--radius); }
+  .reltext { display: block; padding: 12px; font-size: var(--fs-xs);
+             line-height: 1.33; letter-spacing: var(--ls-12);
+             text-align: left; height: 86px; overflow: hidden; color: var(--text);
+             background: var(--raised); border-radius: var(--r-tile); }
 </style>

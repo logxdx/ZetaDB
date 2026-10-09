@@ -1,25 +1,28 @@
 <script lang="ts">
   import type { Tag } from "../api";
   let { tag }: { tag: Tag } = $props();
-  // Provenance is legible without a legend: human solid, machine dotted,
-  // pending dashed with its confidence shown in mono (spec 13.4).
+  /* Provenance is carried by weight and colour, not by a container: the
+     reference renders status annotations as plain text and explicitly
+     never puts them in a badge. Porcelain 600 for what a human wrote, Ash
+     400 for what the machine accepted, Copper for what is still pending,
+     with the confidence following in Optical Yellow. The dashed outline
+     survives only in the Review overlay, where the tag is a hit target. */
   const cls = $derived(
     tag.source === "human" ? "human" : tag.state === "pending" ? "pending" : "machine"
   );
 </script>
 
-<span class="pill mono {cls}" title="{tag.source} · {tag.state} · {tag.confidence}">
+<span class="tag meta {cls}" title="{tag.source} · {tag.state} · {tag.confidence}">
   {tag.term}{#if cls === "pending"}<em>{tag.confidence.toFixed(2)}</em>{/if}
 </span>
 
 <style>
-  .pill {
-    display: inline-flex; align-items: center; gap: 4px;
-    padding: 1px 6px; border-radius: 3px; white-space: nowrap;
-    color: var(--muted); line-height: 1.6;
+  .tag { white-space: nowrap; }
+  .human   { color: var(--text); font-weight: 600; }
+  .machine { color: var(--muted); }
+  .pending { color: var(--warn); }
+  em {
+    font-style: normal; margin-left: 4px;
+    color: var(--conf); font-variant-numeric: tabular-nums;
   }
-  .human   { border: 1px solid var(--border); color: var(--text); }
-  .machine { border: 1px dotted var(--border); opacity: 0.75; }
-  .pending { border: 1px dashed var(--warn); color: var(--warn); }
-  em { font-style: normal; opacity: 0.7; }
 </style>

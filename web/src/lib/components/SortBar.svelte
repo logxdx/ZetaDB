@@ -9,7 +9,7 @@
   ];
 </script>
 
-<div class="sortbar mono" role="group" aria-label="sort">
+<div class="sortbar meta" role="group" aria-label="sort">
   {#each OPTIONS as o (o.key)}
     <button class:on={value === o.key} title={o.title}
             aria-pressed={value === o.key}
@@ -18,18 +18,21 @@
 </div>
 
 <style>
-  .sortbar { display: flex; gap: 2px; flex: 0 0 auto; }
-  /* Capsules, like every other control on the canvas — the selected one is
-     the only filled surface, so the row stays monochrome. */
+  .sortbar { display: flex; gap: 6px; flex: 0 0 auto; }
+  /* Outlined explore pills. The selected one is the only filled surface,
+     so the row stays monochrome — a sort order is not a primary action,
+     and blue is not spent here. */
   button {
-    background: none; border: 0.8px solid transparent; color: var(--muted);
-    padding: 6px 12px; cursor: pointer; border-radius: 999px;
-    font-family: var(--font-mono); font-size: var(--fs-xs);
-    letter-spacing: 0.02em;
+    background: none; color: var(--muted);
+    border: 1px solid var(--outline); border-radius: var(--r-pill);
+    padding: 5px 12px; cursor: pointer;
+    font-family: var(--font-content); font-size: var(--fs-xs);
+    font-weight: 500; line-height: 16px; letter-spacing: var(--ls-ctl);
     transition: color 140ms var(--ease), background 140ms var(--ease);
   }
   button:hover { color: var(--text); }
   button.on {
-    color: var(--text); background: var(--bg); border-color: var(--chrome-border);
+    color: var(--text); background: var(--surface);
+    border-color: var(--outline);
   }
 </style>

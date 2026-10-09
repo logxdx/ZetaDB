@@ -28,9 +28,39 @@
      simply (viewport / column count) minus that gutter. Varying the widths
      per column looked livelier but broke the vertical rhythm the moment
      you panned sideways. */
-  const GAP = 12;
-  const TARGET = 172;                       // the width a column wants to be
+  /* Comfortable density is load-bearing under this system, not a garnish.
+     The grid used to run a 172px target at a 12px gutter, which is what a
+     3px tile radius wants; a 28px corner on a 172px tile eats a third of
+     its width and reads as a lozenge, and 16px of internal padding leaves
+     a note nowhere to breathe. At 1440px this is 4 columns of 336. */
+  const GAP = 24;
+  const TARGET = 300;                       // the width a column wants to be
   const mod = (n: number, m: number) => ((n % m) + m) % m;
+
+  /* A note's first line is set as a lede so a typed thought carries the
+     same weight as a photograph in the next column — the display face has
+     no other home on the canvas. Split at the first line break, else the
+     first sentence, else a word boundary. */
+  const LEDE_MAX = 64;
+  function splitNote(it: Item): { lede: string; rest: string } {
+    const text = (it.preview || it.title || "…").trim();
+    let cut = text.indexOf("\n");
+    if (cut < 0 || cut > LEDE_MAX) {
+      const dot = text.search(/[.!?](\s|$)/);
+      cut = dot >= 0 && dot <= LEDE_MAX ? dot + 1 : -1;
+    }
+    if (cut < 0) {
+      if (text.length <= LEDE_MAX) cut = text.length;
+      else {
+        const sp = text.lastIndexOf(" ", LEDE_MAX);
+        cut = sp > 16 ? sp : LEDE_MAX;
+      }
+    }
+    return { lede: text.slice(0, cut).trim(), rest: text.slice(cut).trim() };
+  }
+  /* Scaled to the tile: 32px inside a 190px orbit tile is a headline in a
+     stamp, so the lede tracks the column width and bottoms out at 15px. */
+  const ledeSize = (w: number) => Math.max(15, Math.min(32, Math.round(w * 0.105)));
 
   const orbit = $derived(!!focusItem);
 
@@ -141,7 +171,7 @@
     const cx = vw / 2 - ox;
     const cy = vh / 2 - oy;
 
-    const FW = 300;
+    const FW = 360;
     const fh = Math.round(FW * ratioOf(focusItem));
     out.push({ key: `F:${focusItem.id}`, item: focusItem,
                x: cx - FW / 2, y: cy - fh / 2, w: FW, h: fh,
@@ -154,11 +184,14 @@
        was not enough: a portrait tile is up to 1.55x taller than it is
        wide, and those collided with their neighbours around the circle. */
     const others = items.filter((i) => i.id !== focusItem.id);
-    const GAPR = 30;
+    const GAPR = 36;
     let rank = 0, ring = 1, inner = Math.max(FW, fh) / 2;
 
     while (rank < others.length && ring < 9) {
-      const size = Math.max(120, 230 - (ring - 1) * 22);
+      /* The floor is 190px, not 120px: every tile carries a 28px corner,
+         and below about 190 that corner stops reading as a frame and
+         starts reading as a lozenge. */
+      const size = Math.max(190, 300 - (ring - 1) * 26);
       const count = Math.min(others.length - rank, 7 + (ring - 1) * 4);
       const slice = others.slice(rank, rank + count).map((it) => {
         const h = Math.round(size * ratioOf(it));
@@ -327,17 +360,21 @@
         <img src={t.item.thumb_url} alt={t.item.title ?? ""}
              loading="eager" decoding="async" draggable="false" />
       {:else}
-        <span class="note">{t.item.preview || t.item.title || "…"}</span>
+        {@const n = splitNote(t.item)}
+        <span class="note" style:--lede="{ledeSize(t.w)}px">
+          <span class="lede">{n.lede}</span>
+          {#if n.rest}<span class="rest">{n.rest}</span>{/if}
+        </span>
       {/if}
       <!-- The reference lightens the tile and states the one thing a plain
            click does. Tags ride underneath it, small, because they are the
            reason two things end up next to each other. -->
       <span class="veil">
-        <span class="hint mono">
+        <span class="hint meta">
           {orbit ? "click to re-centre" : "click to view similar"}
         </span>
         {#if t.item.tags.length}
-          <span class="tags mono">{t.item.tags.slice(0, 3).map((x) => x.term).join(" · ")}</span>
+          <span class="tags meta">{t.item.tags.slice(0, 3).map((x) => x.term).join(" · ")}</span>
         {/if}
       </span>
       <!-- Details are a deliberate second action: a plain click explores
@@ -360,53 +397,67 @@
   }
   .canvas.dragging { cursor: grabbing; }
 
+  /* 28px corners, no border, no shadow, no hover lift. The ground behind
+     an image is Obsidian, which is the one ground that casts nothing back
+     onto an arbitrary photograph. */
   .tile {
-    position: absolute; padding: 0; border: 0; background: var(--raised);
-    overflow: hidden; cursor: pointer; border-radius: var(--tile-radius);
+    position: absolute; padding: 0; border: 0; background: var(--well);
+    overflow: hidden; cursor: pointer; border-radius: var(--r-tile);
     transition: opacity 160ms var(--ease);
   }
   .tile img {
     width: 100%; height: 100%; object-fit: cover; display: block;
     user-select: none; -webkit-user-drag: none;
   }
-  /* A note has no image to carry it, so it gets the one filled surface on
-     the canvas — enough to read as an object against the white. */
+  /* A note has no image to carry it, so it takes the one filled sheet on
+     the canvas and the one piece of display type. */
   .tile .note {
-    display: block; padding: 14px; font-size: var(--fs-sm); line-height: 1.45;
-    letter-spacing: -0.01em; text-align: left; color: var(--text);
-    background: var(--raised); height: 100%; overflow: hidden;
+    display: flex; flex-direction: column; gap: 10px;
+    padding: 16px; height: 100%; overflow: hidden;
+    text-align: left; color: var(--text); background: var(--raised);
   }
-  /* The subject of an orbit is marked by lift, not by colour — a hairline
-     and a shadow read as "this one is in front" without putting an accent
-     stripe across the picture. */
-  .tile.isfocus {
-    box-shadow: 0 0 0 0.8px var(--chrome-border), 0 14px 38px rgba(0, 0, 0, 0.22);
+  .note .lede {
+    font-family: var(--font-display); font-weight: 600;
+    font-size: var(--lede, var(--fs-2xl)); line-height: 1.13;
+    letter-spacing: var(--ls-32);
   }
+  .note .rest {
+    font-size: var(--fs-sm); line-height: 1.43; letter-spacing: var(--ls-14);
+    color: var(--muted); overflow: hidden;
+  }
+  /* The subject of an orbit is marked by a 1px ring — used as an outline,
+     not as elevation. Nothing on this canvas casts a shadow, and a blue
+     stripe across a photograph is the one thing the reference would never
+     do. */
+  .tile.isfocus { box-shadow: 0 0 0 1px var(--outline); }
 
   .info {
-    position: absolute; top: 7px; right: 7px; z-index: 3;
-    width: 20px; height: 20px; border-radius: 999px;
+    position: absolute; top: 10px; right: 10px; z-index: 3;
+    width: 24px; height: 24px; border-radius: var(--r-compact);
     display: grid; place-items: center;
-    font-family: var(--font-mono); font-size: 11px; font-style: italic;
-    background: var(--chrome); color: var(--text);
-    border: 0.8px solid var(--chrome-border); box-shadow: var(--chrome-shadow);
+    font-family: var(--font-content); font-size: var(--fs-xs);
+    font-style: italic;
+    background: color-mix(in srgb, var(--steel) 72%, transparent);
+    color: var(--text); border: 1px solid var(--outline);
     cursor: pointer;
     opacity: 0; transition: opacity 140ms var(--ease), background 140ms var(--ease);
   }
   .tile:hover .info, .info:focus-visible { opacity: 1; }
-  .info:hover { background: var(--accent); color: #fff; }
+  .info:hover { background: var(--blue); border-color: var(--blue); color: #fff; }
 
   .veil {
-    position: absolute; inset: 0; padding: 10px;
+    position: absolute; inset: 0; padding: 16px;
     display: flex; flex-direction: column; align-items: center;
-    justify-content: center; gap: 5px; text-align: center;
-    background: color-mix(in srgb, var(--bg) 86%, transparent);
+    justify-content: center; gap: 8px; text-align: center;
+    background: color-mix(in srgb, var(--bg) 72%, transparent);
     opacity: 0; transition: opacity 140ms var(--ease);
   }
   .tile:hover .veil { opacity: 1; }
-  .hint { color: var(--text); letter-spacing: -0.02em; }
+  .hint {
+    color: var(--text); font-size: var(--fs-xs); letter-spacing: var(--ls-12);
+  }
   .tags {
-    color: var(--muted); font-size: var(--fs-xs); letter-spacing: -0.01em;
+    color: var(--muted); font-size: var(--fs-xs); letter-spacing: var(--ls-12);
     max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
 

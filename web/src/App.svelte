@@ -95,21 +95,23 @@
   ondragleave={() => (dragging = false)} ondrop={drop} />
 
 <!-- The chrome floats ON the canvas instead of sitting above it in a bar:
-     one capsule holding the search field and the "+" that adds things, then
-     the theme toggle. Nothing has a hard edge against the grid. -->
+     one contained Graphite bar holding the search field and the "+" that
+     adds things, then the theme control. No hard edge against the grid,
+     and no shadow — a 1px keyline is the whole separation. -->
 <div class="chrome">
   <form class="bar" onsubmit={(e) => { e.preventDefault(); runSearch(q); }}>
     <input bind:value={q} placeholder="Search…" aria-label="search"
            oninput={() => { if (!q) clearSearch(); }} />
     {#if store.queueDepth > 0}
-      <span class="mono queue">{store.queueDepth} processing</span>
+      <span class="meta queue">{store.queueDepth} processing</span>
     {/if}
-    {#if uploadNote}<span class="mono note">{uploadNote}</span>{/if}
+    {#if uploadNote}<span class="meta note">{uploadNote}</span>{/if}
     {#if store.mode === "stream"}
       <SortBar value={store.sort} onchange={(s) => store.setSort(s)} />
     {/if}
     <!-- The one way in: writing and uploading are the same gesture, so they
-         live behind the same button rather than as two pieces of chrome. -->
+         live behind the same button rather than as two pieces of chrome —
+         and so this is the single filled blue control in the product. -->
     <button class="plus" type="button" onclick={compose}
             title="write a note or upload files" aria-label="add">+</button>
   </form>
@@ -121,7 +123,7 @@
 
 <main class:related={store.mode === "related"} class:searching={store.mode === "search"}>
   {#if store.mode === "search"}
-    <div class="sumline mono">
+    <div class="sumline">
       <strong>{store.items.length}</strong> for “{store.query}”
       {#each Object.entries(store.retrievers) as [k, n]}
         <span class="ret">{whyLabel(k)} {n}</span>
@@ -129,18 +131,20 @@
       {#if store.seeds.length}
         <span class="seeds">tag seeds: {store.seeds.map((s) => s.term).join(", ")}</span>
       {/if}
-      <button class="mono" onclick={clearSearch}>clear</button>
+      <button onclick={clearSearch}>clear</button>
     </div>
   {/if}
 
   {#if store.error}
-    <p class="mono err">{store.error}</p>
+    <p class="err">{store.error}</p>
   {:else if !store.items.length && !store.loading && store.mode !== "related"}
+    <!-- An empty library is the hero stage, not an error state: one
+         display-scale statement on an uninterrupted Obsidian field. -->
     <div class="empty">
-      <p class="mono muted">nothing here yet</p>
-      <p class="muted">Drop files anywhere, paste an image or text, or press
-        <kbd class="mono">+</kbd> to dump an idea. The watched folder is
-        <code class="mono">~/dump</code>.</p>
+      <h1 class="hero">Nothing here yet.</h1>
+      <p class="lede">Drop files anywhere, paste an image or a block of text,
+        or press <kbd>+</kbd> to dump an idea.</p>
+      <p class="where meta">watching <code>~/dump</code></p>
     </div>
   {:else}
     <Canvas items={store.items} onopen={openItem} oninfo={(id) => (focusId = id)}
@@ -163,93 +167,130 @@
          onupload={() => fileInput?.click()}
          oncreated={() => store.loadStream(true)} />
 
-{#if dragging}<div class="dropzone"><span class="mono">drop to ingest</span></div>{/if}
+{#if dragging}<div class="dropzone"><span>drop to ingest</span></div>{/if}
 
 <style>
-  /* Floating chrome, after the reference: a capsule on the canvas rather
-     than a bar above it. Every surface here shares one recipe — full
-     rounding, an off-white fill, a hairline, an inner top highlight and a
-     soft drop shadow — so the controls read as one family of objects. */
+  /* The chrome floats on the canvas, but it is no longer a capsule with
+     its own light: under this system an object is its fill plus a 1px
+     keyline, and nothing casts a shadow. A contained Graphite bar at a
+     20px radius, after the reference's local product navigation. */
   .chrome {
-    position: fixed; top: 10px; left: 10px; right: 10px; z-index: 20;
-    display: flex; align-items: center; gap: 8px;
+    position: fixed; top: var(--inset); left: var(--inset); right: var(--inset);
+    z-index: 20; display: flex; align-items: center; gap: 8px;
     pointer-events: none;
   }
   .chrome > :global(*) { pointer-events: auto; }
 
-  .bar, :global(.chrome .round) {
-    height: var(--chrome-h);
-    background: var(--chrome);
-    border: 0.8px solid var(--chrome-border);
-    box-shadow: var(--chrome-shadow);
-    border-radius: 999px;
-  }
-
   .bar {
     flex: 1 1 auto; min-width: 0;
-    display: flex; align-items: center; gap: 8px; padding: 8px;
+    height: var(--chrome-h);
+    display: flex; align-items: center; gap: 10px; padding: 6px 6px 6px 0;
+    background: var(--chrome);
+    border: 1px solid var(--keyline);
+    border-radius: var(--r-nav);
   }
+  /* The bar IS the field, so the focus ring lands on the container rather
+     than nesting a second outlined pill inside a 44px bar. */
+  .bar:focus-within { outline: 1px solid var(--blue); outline-offset: 1px; }
+
   .bar input {
     flex: 1 1 auto; min-width: 0;
-    background: none; border: 0; color: var(--text); padding: 0 6px 0 10px;
-    font-family: var(--font-content); font-size: var(--fs-sm);
-    letter-spacing: -0.02em; outline: none;
+    background: none; border: 0; outline: none;
+    color: var(--text); padding: 0 6px 0 18px;
+    font-family: var(--font-content);
+    font-size: var(--fs-md); letter-spacing: var(--ls-17);
   }
   .bar input::placeholder { color: var(--muted); }
 
-  /* Sized and skinned like the field's other inhabitants: a 34px disc that
-     sits inside the capsule rather than beside it. */
+  /* The one filled blue control in the product. The reference spends its
+     concentrated blue on exactly this kind of control and nothing else. */
   .plus {
-    flex: 0 0 auto; width: 34px; height: 34px; padding: 0;
+    flex: 0 0 auto; width: 32px; height: 32px; padding: 0;
     display: grid; place-items: center; cursor: pointer;
-    background: var(--bg); color: var(--muted);
-    border: 0.8px solid var(--chrome-border); border-radius: 999px;
+    background: var(--blue); color: #fff;
+    border: 0; border-radius: var(--r-pill);
     font-family: var(--font-content); font-size: 19px; line-height: 1;
-    transition: color 140ms var(--ease), transform 160ms var(--ease);
+    transition: filter 140ms var(--ease);
   }
-  .plus:hover { color: var(--text); transform: scale(1.06); }
+  .plus:hover { filter: brightness(1.12); }
 
-  .queue, .note { color: var(--accent); letter-spacing: 0.02em; white-space: nowrap; }
+  .queue, .note { color: var(--link); white-space: nowrap; }
 
   :global(.chrome .round) {
-    flex: 0 0 auto; padding: 0 16px; min-width: var(--chrome-h);
-    color: var(--muted); cursor: pointer; letter-spacing: 0.02em;
+    flex: 0 0 auto; height: var(--chrome-h); min-width: var(--chrome-h);
+    padding: 0 14px;
+    background: var(--chrome);
+    border: 1px solid var(--keyline);
+    border-radius: var(--r-compact);
+    color: var(--muted); cursor: pointer;
+    font-size: var(--fs-xs); letter-spacing: var(--ls-ctl);
     display: inline-grid; place-items: center;
     transition: color 140ms var(--ease);
   }
   :global(.chrome .round:hover) { color: var(--text); }
 
-  /* The canvas is fixed at inset 0 and the chrome floats over it, so the
-     only thing that needs a top offset is flow content. */
+  /* Result strip — the reference's announcement band, contained rather
+     than full-bleed, because the canvas is fixed at inset 0 and nothing
+     is allowed to reserve vertical space above it. */
   .sumline {
-    position: fixed; top: calc(var(--chrome-h) + 18px); left: 10px; z-index: 15;
-    width: max-content; max-width: calc(100vw - 20px);
-    display: flex; align-items: center; gap: 12px;
-    color: var(--muted); padding: 0 8px 0 16px; height: 42px;
-    background: var(--chrome); border: 0.8px solid var(--chrome-border);
-    box-shadow: var(--chrome-shadow); border-radius: 999px;
+    position: fixed;
+    top: calc(var(--inset) + var(--chrome-h) + 12px); left: var(--inset);
+    z-index: 15;
+    width: max-content; max-width: calc(100vw - var(--inset) * 2);
+    display: flex; align-items: center; gap: 14px;
+    height: var(--strip-h); padding: 0 10px 0 20px;
+    color: var(--text);
+    font-size: var(--fs-sm); line-height: 20px; letter-spacing: var(--ls-14);
+    background: var(--surface);
+    border: 1px solid var(--keyline);
+    border-radius: var(--r-nav);
   }
-  .sumline strong { color: var(--text); font-weight: 500; }
+  .sumline strong { font-weight: 600; }
   .ret { color: var(--muted); }
   .ret::before { content: "· "; opacity: 0.5; }
-  .seeds { color: var(--accent); }
+  .seeds { color: var(--muted); }
+  /* Embedded controls on a dark strip are links, not buttons. */
   .sumline button {
-    background: none; border: 0; color: var(--muted);
-    padding: 1px 6px; cursor: pointer; border-radius: 999px;
+    background: none; border: 0; color: var(--link);
+    font-family: var(--font-content); font-size: var(--fs-sm);
+    letter-spacing: var(--ls-14);
+    padding: 2px 8px; cursor: pointer; border-radius: var(--r-link);
   }
-  .sumline button:hover { color: var(--text); }
+  .sumline button:hover { text-decoration: underline; }
 
-  .empty { padding: 110px 26px; max-width: 460px; }
-  .empty p { margin: 0 0 10px; }
-  .muted { color: var(--muted); }
-  .err { color: var(--err); }
-  kbd { border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; }
-  code { color: var(--text); }
+  /* An empty library is this product's hero stage. It is the only place
+     80px display type appears. */
+  .empty {
+    position: fixed; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 18px; padding: 0 var(--inset); text-align: center;
+  }
+  .hero {
+    margin: 0; max-width: 14ch;
+    font-family: var(--font-display); font-weight: 600;
+    font-size: clamp(40px, 9vw, var(--fs-hero));
+    line-height: 1.05; letter-spacing: var(--ls-80);
+    color: var(--text);
+  }
+  .lede {
+    margin: 0; max-width: 46ch; color: var(--muted);
+    font-size: var(--fs-md); line-height: 1.47; letter-spacing: var(--ls-17);
+  }
+  .where { color: var(--muted); margin: 0; }
+  .err { color: var(--err); padding: calc(var(--inset) * 4) var(--inset); }
+  kbd {
+    border: 1px solid var(--outline); border-radius: var(--r-link);
+    padding: 1px 6px; color: var(--text);
+  }
+  code { font-family: var(--font-mono); color: var(--text); }
+
   .dropzone {
-    position: fixed; inset: 10px; border: 1.5px dashed var(--accent);
-    border-radius: 8px; z-index: 60; pointer-events: none;
+    position: fixed; inset: var(--inset);
+    border: 1px solid var(--link); border-radius: var(--r-panel);
+    z-index: 60; pointer-events: none;
     display: grid; place-items: center;
     background: color-mix(in srgb, var(--bg) 72%, transparent);
   }
-  .dropzone span { color: var(--accent); font-size: var(--fs-md); letter-spacing: 0.02em; }
+  .dropzone span { color: var(--link); font-size: var(--fs-md); }
 </style>

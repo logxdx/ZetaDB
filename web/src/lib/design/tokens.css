@@ -1,87 +1,177 @@
-/* iwashere design tokens — spec §13.3
-   Light palette on bare :root; dark redefined twice so both the system
-   default and an explicit toggle resolve correctly. */
+/* iwashere design tokens — see DESIGN.md
+
+   Adapted from the Apple product-page reference. Dark is the authored
+   theme and light is its White counterpart; both carry the same 28px
+   geometry and the same rule about elevation, which is that there is
+   none. Layers separate by surface shift and a 1px keyline.
+
+   The light values live once, in the --light-* block, and are only
+   ASSIGNED twice — under the media query and under the explicit toggle.
+   The previous file authored the off-theme palette twice in full and the
+   two copies had drifted apart on six values, so system-dark and
+   toggled-dark were quietly different themes. Values that exist once
+   cannot drift. */
 
 :root {
-  --bg:      #FFFFFF;
-  --surface: #FFFFFF;
-  --raised:  #F2F0EE;
-  --border:  rgba(0, 0, 0, 0.12);
-  --text:    #0A0A0A;
-  --muted:   #6E6E76;
-  --accent:  #FF5A1F;
+  color-scheme: dark light;
 
-  /* Floating chrome. The reference surface is a fully-rounded capsule that
-     sits ON the canvas rather than above it in a bar: a warm off-white fill,
-     a hairline, an inner top highlight and a whisper of drop shadow. Those
-     four together are what make it read as a physical control. */
-  --chrome:        #F2F0EE;
-  --chrome-border: rgba(0, 0, 0, 0.12);
-  --chrome-shadow:
-      inset 0 1px 1.5px rgba(255, 255, 255, 0.7),
-      inset 0 -1px 1.5px rgba(0, 0, 0, 0.03),
-      0 1px 8px rgba(0, 0, 0, 0.05);
-  --chrome-h: 52px;
-  --tile-radius: 3px;
-  --tile-gap: 12px;
+  /* ---- palette ---------------------------------------------------- */
+  /* Values are the reference's measurements; the roles are ours. */
+  --obsidian:  #000000;
+  --graphite:  #0e0e0e;
+  --carbon:    #1d1d1f;
+  --steel:     #333336;
+  --slate:     #6e6e73;
+  --ash:       #86868b;
+  --porcelain: #f5f5f7;
+  --paper:     #ffffff;
 
-  --ok:   #2F7A4F;
-  --warn: #A8721A;
-  --miss: #8A8A93;
-  --err:  #C0392B;
+  --blue:   #0071e3;   /* filled primary action — at most one on screen */
+  --link:   #2997ff;   /* interactive text on Obsidian and Carbon */
+  --cobalt: #0066cc;   /* the same, on White */
 
-  --radius: 4px;
-  --gutter: 10px;
-  --col:    240px;
+  /* Status colours come in pairs, because the reference's own values are
+     LIGHT-surface colours and do not survive a black ground. Measured:
+     Copper #b64400 is 3.82:1 on Obsidian and 3.06:1 on Carbon — it fails
+     4.5:1 on both, and it carries a pending tag, which is text a person
+     has to read. #ef6c1a is the nearest lift that passes (6.83 / 5.47).
+     Optical Yellow is the mirror case: 11.84:1 on Carbon, 1.42:1 on White.
+     Each role therefore resolves per theme, below. */
+  --copper:      #b64400;   /* pending tags — on White */
+  --copper-lift: #ef6c1a;   /* the same role — on Obsidian and Carbon */
+  --yellow:      #ffd500;   /* confidence readouts — on dark */
+  --yellow-deep: #7a5c00;   /* the same role — on White */
 
-  --font-content: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  /* Two additions. The reference is a marketing page and has no failing
+     ingest pipeline; this has four stages that each degrade on their own.
+     Small text and 1px marks only, never fills — and Copper does not
+     absorb this work, because it annotates newness, not failure. */
+  --verified:      #30d158;
+  --verified-deep: #1d7a3e;
+  --alert:         #ff453a;
+  --alert-deep:    #c0392b;
 
-  --fs-xs: 12px; --fs-sm: 13px; --fs-md: 15px;
-  --fs-lg: 18px; --fs-xl: 24px; --fs-2xl: 32px;
+  /* ---- the light counterpart, authored once ----------------------- */
+  --light-bg:      #ffffff;
+  --light-surface: #ffffff;
+  --light-raised:  #f5f5f7;
+  --light-well:    #f5f5f7;
+  --light-chrome:  #f5f5f7;
+  --light-keyline: #d2d2d7;
+  --light-border:  #d2d2d7;
+  --light-outline: #86868b;
+  --light-text:    #1d1d1f;
+  --light-muted:   #6e6e73;
+  --light-accent:  #0066cc;
+
+  /* ---- semantic roles (dark) -------------------------------------- */
+  --bg:      var(--obsidian);   /* the canvas ground */
+  --surface: var(--carbon);     /* panels: focus, palette */
+  --raised:  var(--carbon);     /* note tiles, tab rests, inset blocks */
+  --well:    var(--obsidian);   /* media and graph wells inside a panel */
+  --chrome:  var(--graphite);   /* the floating bar */
+  --keyline: #282828;           /* the 1px line that replaces every shadow */
+  --border:  var(--steel);      /* dividers inside panels */
+  --outline: var(--slate);      /* control outlines, the orbit ring */
+  --text:    var(--porcelain);
+  --muted:   var(--ash);
+  --accent:  var(--link);
+
+  --ok:   var(--verified);
+  --warn: var(--copper-lift);
+  --miss: var(--ash);
+  --err:  var(--alert);
+  --conf: var(--yellow);
+
+  /* ---- type ------------------------------------------------------- */
+  /* SF Pro where it exists, Inter as the documented substitute. */
+  --font-content: "SF Pro Text", "Inter", -apple-system, BlinkMacSystemFont,
+                  system-ui, sans-serif;
+  --font-display: "SF Pro Display", "Inter", -apple-system, BlinkMacSystemFont,
+                  system-ui, sans-serif;
+  /* Monospace survives for literal readouts only — the layout dump and
+     raw blocks. It is no longer the metadata face. */
+  --font-mono: "SF Mono", "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+
+  --fs-xs:  12px;   /* all metadata */
+  --fs-sm:  14px;   /* note bodies, strips */
+  --fs-md:  17px;   /* body, search input */
+  --fs-lg:  21px;   /* item titles */
+  --fs-xl:  28px;   /* focus title, stats */
+  --fs-2xl: 32px;   /* note lede */
+  --fs-3xl: 48px;
+  --fs-hero: 80px;  /* the empty-canvas statement, and nowhere else */
+
+  /* Tracking is measured per size, not scaled — it is what keeps dense
+     interface language quiet next to the imagery. */
+  --ls-12:  -0.264px;
+  --ls-14:  -0.224px;
+  --ls-17:  -0.374px;
+  --ls-19:   0.228px;
+  --ls-21:   0.231px;
+  --ls-28:   0.196px;
+  --ls-32:   0.128px;
+  --ls-48:  -0.24px;
+  --ls-80:  -1.2px;
+  --ls-ctl: -0.12px;   /* control labels */
+
+  /* ---- geometry --------------------------------------------------- */
+  --r-tile:    28px;
+  --r-panel:   28px;
+  --r-nav:     20px;
+  --r-pill:    9999px;
+  --r-button:  170px;
+  --r-input:   980px;
+  --r-compact: 36px;
+  --r-link:    10px;
+
+  --chrome-h: 44px;   /* the global floating bar */
+  --strip-h:  52px;   /* result strip and related bar */
+  --inset:    24px;   /* chrome distance from every viewport edge */
+  --gutter:   24px;
+  /* The canvas gutter and column target are NOT tokens: the grid is laid
+     out in JS, and a second copy here would be free to drift from the one
+     the layout actually uses. They live in Canvas.svelte (GAP, TARGET). */
 
   --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
-  color-scheme: light dark;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --bg:      #0A0A0B;
-    --surface: #141415;
-    --raised:  #1A1A1C;
-    --border:  #242426;
-    --text:    #ECECEE;
-    --muted:   #8C8C94;
-    --chrome:        #191919;
-    --chrome-border: rgba(255, 255, 255, 0.14);
-    --chrome-shadow:
-        inset 0 1px 1.5px rgba(255, 255, 255, 0.07),
-        inset 0 -1px 1.5px rgba(0, 0, 0, 0.3),
-        0 1px 10px rgba(0, 0, 0, 0.45);
-    --ok:   #4ADE80;
-    --warn: #FBBF24;
-    --miss: #6E6E76;
-    --err:  #F87171;
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg:      var(--light-bg);
+    --surface: var(--light-surface);
+    --raised:  var(--light-raised);
+    --well:    var(--light-well);
+    --chrome:  var(--light-chrome);
+    --keyline: var(--light-keyline);
+    --border:  var(--light-border);
+    --outline: var(--light-outline);
+    --text:    var(--light-text);
+    --muted:   var(--light-muted);
+    --accent:  var(--light-accent);
+    --ok:   var(--verified-deep);
+    --warn: var(--copper);
+    --err:  var(--alert-deep);
+    --conf: var(--yellow-deep);
   }
 }
 
-:root[data-theme="dark"] {
-  --bg:      #0B0B0C;
-  --surface: #141416;
-  --raised:  #1C1C1F;
-  --border:  #232327;
-  --text:    #EDEDEF;
-  --muted:   #8A8A93;
-  --chrome:        #191919;
-  --chrome-border: rgba(255, 255, 255, 0.14);
-  --chrome-shadow:
-      inset 0 1px 1.5px rgba(255, 255, 255, 0.07),
-      inset 0 -1px 1.5px rgba(0, 0, 0, 0.3),
-      0 1px 10px rgba(0, 0, 0, 0.45);
-  --ok:   #4ADE80;
-  --warn: #FBBF24;
-  --miss: #6E6E76;
-  --err:  #F87171;
+:root[data-theme="light"] {
+  --bg:      var(--light-bg);
+  --surface: var(--light-surface);
+  --raised:  var(--light-raised);
+  --well:    var(--light-well);
+  --chrome:  var(--light-chrome);
+  --keyline: var(--light-keyline);
+  --border:  var(--light-border);
+  --outline: var(--light-outline);
+  --text:    var(--light-text);
+  --muted:   var(--light-muted);
+  --accent:  var(--light-accent);
+  --ok:   var(--verified-deep);
+  --warn: var(--copper);
+  --err:  var(--alert-deep);
+  --conf: var(--yellow-deep);
 }
 
 * { box-sizing: border-box; }
@@ -92,18 +182,33 @@ body {
   color: var(--text);
   font-family: var(--font-content);
   font-size: var(--fs-md);
-  line-height: 1.5;
+  line-height: 1.47;
+  letter-spacing: var(--ls-17);
   -webkit-font-smoothing: antialiased;
 }
 
-/* Accent is for focus, active and selection only — it clears 4.5:1 on the
-   dark ground but not the light one, so it never carries body text. */
+/* Metadata. This class used to mean monospace and now means "the machine
+   produced this": SF Pro Text at 12px in Ash, with provenance carried by
+   weight and colour rather than by typeface. */
+.meta {
+  font-family: var(--font-content);
+  font-size: var(--fs-xs);
+  line-height: 1.33;
+  letter-spacing: var(--ls-12);
+}
+
+/* Literal readouts — the layout dump, raw blocks. Code, not labels. */
+.code {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: 1.45;
+}
+
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+  border-radius: var(--r-link);
 }
-
-.mono { font-family: var(--font-mono); font-size: var(--fs-xs); }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

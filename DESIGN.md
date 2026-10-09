@@ -23,17 +23,21 @@ iwashere is a local idea dump — screenshots, photographs, diagrams and typed n
 | Signal Blue | `#0071e3` | Filled primary controls only — save a note, accept a tag, confirm in the palette |
 | Electric Link | `#2997ff` | Interactive text on Obsidian and Carbon: the selected tag, the highlighted graph edge, inline links, the focus ring |
 | Cobalt Link | `#0066cc` | The same on White light-mode surfaces |
-| Copper | `#b64400` | Pending machine tags, unreviewed vocabulary proposals, "new since last visit" |
-| Optical Yellow | `#ffd500` | Confidence readouts and technical values inside the focus panel |
+| Copper | `#b64400` / `#ef6c1a` | Pending machine tags, unreviewed vocabulary proposals, "new since last visit" |
+| Optical Yellow | `#ffd500` / `#7a5c00` | Confidence readouts and technical values inside the focus panel |
+
+**Why those two are pairs.** The reference uses Copper and Optical Yellow on *white*, and neither survives a black ground. Measured: Copper `#b64400` is 3.82:1 on Obsidian and 3.06:1 on Carbon — it fails 4.5:1 on both, and it carries a pending tag, which is text a person has to read. `#ef6c1a` is the nearest lift that passes (6.83 / 5.47). Optical Yellow is the mirror case — 11.84:1 on Carbon, 1.42:1 on White. Every status role therefore resolves per theme: the first value is the light-surface one, the second the dark.
 
 **Two additions the reference has no equivalent for.** A marketing page has no failing pipeline; iwashere does, and four ingest stages can each degrade independently. Extending the palette minimally rather than overloading Copper:
 
-| Name | Value | Role |
-|------|-------|------|
-| Verified | `#30d158` | A stage that completed, a human-confirmed tag — the reference's lone green technical cue, generalised |
-| Alert | `#ff453a` | Stage failure and surfaced exceptions, nothing else |
+| Name | Light | Dark | Role |
+|------|-------|------|------|
+| Verified | `#1d7a3e` | `#30d158` | A stage that completed, a human-confirmed tag — the reference's lone green technical cue, generalised |
+| Alert | `#c0392b` | `#ff453a` | Stage failure and surfaced exceptions, nothing else |
 
 Both are used as small text and 1px marks only, never as fills. Copper must not absorb this work: it annotates newness, not failure.
+
+Everything in this section is measured, not assumed. Porcelain on Obsidian is 19.29:1, Ash on Carbon 4.65:1, Electric Link on Carbon 5.58:1, White on Signal Blue 4.70:1. Slate sits at 4.14:1 on Obsidian, which is why it is an outline colour and never text — 1px marks need 3:1, not 4.5:1.
 
 ## Typography
 
@@ -84,7 +88,7 @@ The reference spends its display sizes on a hero product reveal. iwashere has tw
 - **Element gap:** 4px
 - **Canvas gutter:** 24px, both axes
 - **Chrome inset:** 24px from every viewport edge
-- **Chrome height:** 44px for the global bar, 72px for the result strip
+- **Chrome height:** 44px for the global bar, 52px for the result strip and related bar
 - **Column target:** 300px — `columns = max(2, round(vw / (300 + 24)))`, `pitch = vw / columns`, `width = pitch − 24`, fluid at every width with no max
 
 **This widens the grid, and it has to.** The previous canvas ran a 172px column target at a 12px gutter — compact density, which is what a 3px tile radius wants. A 28px corner on a 172px tile eats a third of its width and reads as a lozenge; 16px of internal padding leaves a note nowhere to breathe. Comfortable density is not a garnish on this system, it is load-bearing. At 1440px the grid becomes 4 columns of 336px; at 992px, 3 of 307px; at 430px it collapses to 1.
@@ -130,7 +134,7 @@ Signal Blue `#0071e3` fill, White SF Pro Text 12px/400, 16px line-height, -0.12p
 ### Note Tile
 **Role:** A typed note, holding its own against a photograph
 
-Carbon `#1d1d1f` fill at a 28px radius with 16px padding. The first line is a lede in SF Pro Display 32px/600 at 1.13 line-height and 0.128px tracking; the remainder is SF Pro Text 14px/400 in Porcelain at 1.43. A photograph is carried by its own content, so a note is given the one filled sheet and the one piece of display type on the canvas, and the grid stays balanced.
+Carbon `#1d1d1f` fill at a 28px radius with 16px padding. The first line is a lede in SF Pro Display at 1.13 line-height and 0.128px tracking; the remainder is SF Pro Text 14px/400 in Ash at 1.43. The lede is 32px at the 300px column target and **scales with the tile** — `clamp` it to the width, bottoming out at 15px, or a 190px orbit tile gets a headline in a stamp. Split at the first line break, else the first sentence, else a word boundary near 64 characters. A photograph is carried by its own content, so a note is given the one filled sheet and the one piece of display type on the canvas, and the grid stays balanced.
 
 ### Tile Hover Veil
 **Role:** Deferred metadata over a tile
@@ -160,7 +164,9 @@ A row of transparent 9999px pills, each with a 1px Slate `#6e6e73` outline and a
 ### Result Strip
 **Role:** What the current result set is
 
-Adapted from the reference's announcement strip: Carbon `#1d1d1f`, 72px tall, SF Pro Text 14px/400 in Porcelain with 20px line-height and -0.224px tracking, the count in weight 600. Embedded controls — clear search, change sort — render as Electric Link `#2997ff`. Retriever identifiers never appear; the label is the same human wording the veil uses.
+Adapted from the reference's announcement strip: Carbon `#1d1d1f`, SF Pro Text 14px/400 in Porcelain with 20px line-height and -0.224px tracking, the count in weight 600. Embedded controls — clear search, change sort — render as Electric Link `#2997ff`. Retriever identifiers never appear; the label is the same human wording the veil uses.
+
+The reference's strip is a full-bleed 72px band. This one is **contained** at a 20px radius and 52px tall, in the slot 12px below the chrome, because the canvas is `fixed inset-0` and nothing is allowed to reserve vertical space above it. A floating 72px block reads as a slab; the band only works when it spans the viewport.
 
 ### Related Bar
 **Role:** Names the subject of an orbit
@@ -175,7 +181,9 @@ A Carbon `#1d1d1f` panel at a 28px radius with **no shadow**, inset 24px from to
 ### Command Palette
 **Role:** The only navigation
 
-A Carbon `#1d1d1f` panel at a 28px radius, centred at 18vh, `min(680px, 100vw − 48px)` wide, over an Obsidian scrim at 70%. A field in the Search Field recipe sits above a result list; the active tab is marked by a Porcelain label over a Steel fill, and the confirm action is the single Filled Action Pill. `⌘K` / `Ctrl-K` opens, `Tab` switches search ↔ new note, `⌘↵` saves, `Esc` closes.
+A Carbon `#1d1d1f` panel at a 28px radius, centred at 18vh, `min(680px, 100vw − 48px)` wide, over an Obsidian scrim at 70%. A field in the Search Field recipe sits under a tab row; the active tab is marked by a Porcelain label over a Steel fill, never by a coloured outline — blue is for the action, not for which pane you are looking at. The palette confirms from the keyboard and carries no filled control of its own, which is what keeps the product's single blue pill single. `⌘K` / `Ctrl-K` opens, `Tab` switches search ↔ new note, `⌘↵` saves, `Esc` closes.
+
+The multi-line composer is the one place the two input radii are not interchangeable: a 980px pill cannot hold five rows, so the textarea takes the 28px panel corner instead.
 
 ### Graph Well
 **Role:** The neighbourhood of one item
@@ -246,7 +254,7 @@ Two budgets, both collapsing to instant under `prefers-reduced-motion: reduce`. 
 
 **Canvas motion** is a target/actual split: `tx/ty` is where the canvas is heading, `ox/oy` is what is drawn, and a rAF loop closes the gap with `k = 1 − exp(−dt/tau)` — framerate-independent, identical at 60 and 144 Hz. `TAU_FOLLOW = 95` for the wheel, `TAU_GLIDE = 230` for released momentum. A drag moves target and actual together so the canvas stays welded to the cursor, then hands its velocity over.
 
-**The orbit** grows rather than replaces: the clicked tile stays put and its neighbours scale up around it in rings, staggered by rank. Ring radius is derived from the actual tiles — each is placed at an angle proportional to its own footprint, and a ring clears the one inside it. Sizing by width alone collides, because a portrait tile is up to 1.55× taller than wide.
+**The orbit** grows rather than replaces: the clicked tile stays put and its neighbours scale up around it in rings, staggered by rank. Ring radius is derived from the actual tiles — each is placed at an angle proportional to its own footprint, and a ring clears the one inside it. Sizing by width alone collides, because a portrait tile is up to 1.55× taller than wide. Ring tiles start at 300px and step down by 26px per ring to a **floor of 190px**: every tile carries a 28px corner, and below about 190px that corner stops reading as a frame and starts reading as a lozenge. The subject itself is 360px.
 
 Everything else is near-instant: 140ms on the hover veil, 240ms on the focus panel. No hover fades on tiles, no skeleton shimmer, no page transitions. Transitions must never apply to library tiles — the keyed list churns constantly as tiles cross the cull window, and animating each one leaves a permanent backlog of entering and dying nodes.
 
@@ -260,22 +268,28 @@ The canvas *is* the page: `fixed inset-0`, panning forever in both directions ov
 
 The floating chrome sits 24px from the top and both sides, with one strip 24px beneath it — result strip or related bar, never both. Clicking a tile grows an orbit of its neighbours in place; the info marker opens the focus panel down the right edge. An empty canvas becomes the display-xl hero stage. Below 660px the focus panel spans both edges; at 430px the grid is one column and the graph drops to one hop. Minimum 24px side gutter at every width, set once on the app wrapper.
 
-## What this changes in the build
+## The port
 
-`web/src/lib/design/tokens.css` and every component style block are written against the previous system. The deltas, in order of blast radius:
+This system is implemented, not proposed. What changed:
 
-| | now | under this reference |
+| | before | now |
 |---|---|---|
 | ground | `#FFFFFF` light-first | Obsidian `#000000`, dark-first |
 | accent | Ember `#FF5A1F`, one token | Signal Blue `#0071e3` fills + Electric Link `#2997ff` text |
 | chrome | `--chrome-shadow` capsule recipe | Graphite fill + 1px `#282828` keyline, no shadow |
 | tile radius | 3px | 28px |
 | column target / gutter | 172px / 12px | 300px / 24px |
+| orbit tile floor | 120px | 190px |
 | metadata face | JetBrains Mono | SF Pro Text 12px in Ash |
-| tag provenance | border style (solid/dotted/dashed) | weight and colour |
-| state colours | `--ok --warn --miss --err` | Verified / Copper / Ash / Alert |
+| tag provenance | border style (solid/dotted/dashed) | weight and colour, no container |
+| empty state | a muted paragraph | the 80px display hero |
+| status colours | one value each | a light and a dark value each, measured |
 
-`--chrome-shadow` disappears entirely and takes the visual logic of six controls with it; that is the single largest edit. The dark-token drift noted earlier — `tokens.css` defines dark twice and the two blocks disagree on six values, so system-dark and toggled-dark are not currently the same theme — resolves itself here, since dark becomes the one authored palette.
+`--chrome-shadow` is gone and took the visual logic of six controls with it — the single largest edit. The `.mono` utility class was **renamed** `.meta` throughout rather than quietly redefined, because a class called `mono` that is not monospace is a lie that costs the next reader an hour; `.code` carries the monospace face for the layout dump.
+
+Two second sources of truth were removed on the way. `tokens.css` had authored the off-theme palette twice in full and the two copies had drifted on six values, so system-dark and toggled-dark were quietly different themes; the light values now live once in a `--light-*` block and are only *assigned* twice. And `--tile-gap` / `--col` were deleted rather than carried over — the grid is laid out in JS, and a copy of its numbers in CSS is free to drift from the ones the layout actually uses. They live in `Canvas.svelte` as `GAP` and `TARGET`.
+
+Verified: `vite build` clean, `svelte-check` 115 files / 0 errors / 0 warnings, 45 Python tests passing, and every colour pair in this document measured against WCAG. **Not yet opened in a browser** — and this project's own history (§17.5) says a UI is not tested until it has been looked at.
 
 ## Similar Brands
 
