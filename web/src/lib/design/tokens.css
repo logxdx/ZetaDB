@@ -2,8 +2,11 @@
 
    Adapted from the Apple product-page reference. Dark is the authored
    theme and light is its White counterpart; both carry the same 28px
-   geometry and the same rule about elevation, which is that there is
-   none. Layers separate by surface shift and a 1px keyline.
+   geometry. Content surfaces have no elevation at all — they separate by
+   surface shift and a 1px keyline. The one exception is the floating
+   chrome, which is a liquid-glass material: translucent, blurred, with a
+   specular edge and the drop shadow that makes a material read as
+   something lying ON the canvas rather than cut into it.
 
    The light values live once, in the --light-* block, and are only
    ASSIGNED twice — under the media query and under the explicit toggle.
@@ -50,6 +53,40 @@
   --verified-deep: #1d7a3e;
   --alert:         #ff453a;
   --alert-deep:    #c0392b;
+
+  /* ---- liquid glass ----------------------------------------------- */
+  /* The chrome is the only translucent material in the product: it floats
+     ON the canvas and lets the work show through it. Content surfaces
+     stay opaque and flat.
+
+     The opacity is measured, not chosen by eye. Over a white photograph a
+     Carbon glass at 0.55 leaves Porcelain at 3.49:1; 0.78 leaves it at
+     7.3:1. More importantly it is why secondary text on glass CANNOT be
+     Ash: mid-grey on a mid-grey composite tops out near 2.9:1 at any
+     opacity worth using, so the chrome gets its own dimmed-but-light
+     secondary instead. */
+  --glass-bg:     rgba(29, 29, 31, 0.78);
+  --glass-border: rgba(255, 255, 255, 0.14);
+  --glass-blur:   saturate(180%) blur(28px);
+  --glass-fill:   rgba(255, 255, 255, 0.16);   /* selected control on glass */
+  /* Specular top edge, a shaded bottom edge, and the lift that makes the
+     material sit above the canvas rather than in it. */
+  --glass-sheen:
+      inset 0 1px 0 rgba(255, 255, 255, 0.16),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.30),
+      0 10px 34px rgba(0, 0, 0, 0.42);
+  --on-glass:     #f5f5f7;
+  --on-glass-dim: #c7c7cc;
+
+  --light-glass-bg:     rgba(255, 255, 255, 0.82);
+  --light-glass-border: rgba(0, 0, 0, 0.10);
+  --light-glass-fill:   rgba(0, 0, 0, 0.08);
+  --light-glass-sheen:
+      inset 0 1px 0 rgba(255, 255, 255, 0.90),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.05),
+      0 10px 34px rgba(0, 0, 0, 0.12);
+  --light-on-glass:     #1d1d1f;
+  --light-on-glass-dim: #3a3a3c;
 
   /* ---- the light counterpart, authored once ----------------------- */
   --light-bg:      #ffffff;
@@ -153,6 +190,12 @@
     --warn: var(--copper);
     --err:  var(--alert-deep);
     --conf: var(--yellow-deep);
+    --glass-bg:     var(--light-glass-bg);
+    --glass-border: var(--light-glass-border);
+    --glass-fill:   var(--light-glass-fill);
+    --glass-sheen:  var(--light-glass-sheen);
+    --on-glass:     var(--light-on-glass);
+    --on-glass-dim: var(--light-on-glass-dim);
   }
 }
 
@@ -172,6 +215,12 @@
   --warn: var(--copper);
   --err:  var(--alert-deep);
   --conf: var(--yellow-deep);
+  --glass-bg:     var(--light-glass-bg);
+  --glass-border: var(--light-glass-border);
+  --glass-fill:   var(--light-glass-fill);
+  --glass-sheen:  var(--light-glass-sheen);
+  --on-glass:     var(--light-on-glass);
+  --on-glass-dim: var(--light-on-glass-dim);
 }
 
 * { box-sizing: border-box; }

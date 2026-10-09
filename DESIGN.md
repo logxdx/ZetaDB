@@ -97,7 +97,7 @@ The reference spends its display sizes on a hero product reveal. iwashere has tw
 
 - **tiles:** 28px
 - **panels:** 28px — focus overlay, command palette, graph well
-- **navigation:** 20px — the contained floating chrome bar and related bar
+- **navigation:** 9999px — the chrome bar, result strip and related bar are capsules, not rounded rectangles. A glass material reads as an object when it is fully rounded and as a panel when it is not; 20px was what made the old top bar look assembled.
 - **pills:** 9999px — tags where they take a container, toggles, the near-dup marker
 - **buttons:** 170px — the filled primary action
 - **inputs:** 980px — the search field and the palette field
@@ -106,10 +106,26 @@ The reference spends its display sizes on a hero product reveal. iwashere has tw
 
 ## Components
 
-### Floating Canvas Chrome
-**Role:** Global controls, resting on the canvas
+### Liquid Glass Chrome
+**Role:** Global controls, floating on the canvas
 
-A contained Graphite `#0e0e0e` bar at a 20px radius with a 1px `#282828` keyline and **no shadow of any kind** — the keyline is the entire separation. 44px tall, inset 24px from the top and both sides, holding the search field, the round controls and the ingest count. The canvas is `fixed inset-0` beneath it and nothing reserves vertical space.
+The chrome is a **material**, not a panel: it lets the library show through, blurs it, and carries a specular edge and a soft lift. A 44px-tall fully-rounded capsule, inset 24px from the top and both sides, holding the search field, the sort row, the add control and the ingest count. The canvas is `fixed inset-0` beneath it and nothing reserves vertical space.
+
+```css
+background: rgba(29, 29, 31, 0.78);          /* light: rgba(255,255,255,0.82) */
+backdrop-filter: saturate(180%) blur(28px);
+border: 1px solid rgba(255, 255, 255, 0.14);
+box-shadow:
+  inset 0 1px 0 rgba(255, 255, 255, 0.16),   /* specular top edge */
+  inset 0 -1px 0 rgba(0, 0, 0, 0.30),        /* shaded bottom edge */
+  0 10px 34px rgba(0, 0, 0, 0.42);           /* the lift */
+```
+
+**The opacity is measured, not chosen.** Over a white photograph, Carbon glass at 0.55 leaves Porcelain at 3.49:1; 0.78 leaves it at 7.54:1. And it is why **secondary text on glass can never be Ash** — mid-grey on a mid-grey composite tops out at 2.27:1 over a bright backdrop, no matter the opacity. The chrome carries its own secondary, `#c7c7cc` on dark and `#3a3a3c` on light, which hold 4.88:1 and 7.44:1 in the worst case. Electric Link fails here too, at 2.8:1, so live counters on the chrome take the on-glass colour and earn emphasis from weight.
+
+Without `backdrop-filter` support the glass would be a flat wash over the photographs, so an `@supports` fallback drops to the opaque `--chrome` fill.
+
+The result strip and the related bar take the same material — they are the same family, and leaving them opaque beside a glass bar is what made the old chrome look assembled rather than designed.
 
 ### Search Field
 **Role:** Primary input
@@ -119,7 +135,9 @@ A contained Graphite `#0e0e0e` bar at a 20px radius with a 1px `#282828` keyline
 ### Round Utility Control
 **Role:** Secondary chrome action
 
-Transparent fill, Porcelain label, a 1px Slate `#6e6e73` outline, a 9999px radius, label in SF Pro Text 12px/400 with 16px line-height and -0.12px tracking. Compact instances take a 36px radius with a square footprint. Houses the theme cycle, the palette trigger and view switches.
+A **true circle at the bar's own height** — 44×44, fully rounded, in the same glass as the bar beside it, so the two read as one set of objects rather than a bar with something stuck to it. Hover tints the material with an inset spread rather than replacing the background, so the blur and specular edge survive. Houses the theme cycle.
+
+A control in the chrome must never size itself from its content. This one did, and because Svelte appends a scope class to component CSS, its own `button.round` rule out-specified the chrome's `.chrome .round` — so it collapsed to a 43×19 slab beside a 44px bar. The chrome owns the box; the component owns only its glyph.
 
 ### Filled Action Pill
 **Role:** The one primary action in view
@@ -224,7 +242,9 @@ The hero of the product. A full-bleed uninterrupted Obsidian field with a centre
 - Name a match in human words and put it in the hover veil.
 
 ### Don't
-- Do not put shadows on tiles, panels or chrome — separate layers with 1px keylines and the Obsidian-to-Carbon surface shift instead.
+- Do not put shadows or translucency on **content** — tiles, the focus panel, the palette and the graph well separate with 1px keylines and the Obsidian-to-Carbon surface shift. The glass chrome is the one exception, and it is the only one.
+- Do not put Ash, Slate or Electric Link on the glass: they measure 2.27:1, 3.32:1 and 2.8:1 over a bright photograph. The chrome has its own on-glass pair.
+- Do not let a control in the chrome size itself from its content — the chrome owns the box.
 - Do not use Signal Blue `#0071e3` as a tile fill, a section background, or an active-sort state.
 - Do not put more than one filled blue control on screen at a time.
 - Do not round tiles below 28px or replace control pills with rectangular buttons.
@@ -239,14 +259,16 @@ The hero of the product. A full-bleed uninterrupted Obsidian field with a centre
 
 ## Elevation
 
-Elevation is almost entirely absent. Layers separate through the black-to-charcoal surface shift (Obsidian canvas → Graphite chrome → Carbon panel), 1px keylines, and 28px geometry. The only shadow-like treatments permitted are outlines: `0 0 0 1px #282828` on the floating chrome and related bar, and `0 0 0 1px #6e6e73` on compact outlined controls and the orbit subject.
+**Content surfaces have none.** Tiles, the focus panel, the palette and the graph well separate through the black-to-charcoal surface shift (Obsidian canvas → Carbon panel), 1px keylines and 28px geometry. The only shadow-like treatment on them is an outline: `0 0 0 1px #6e6e73` on the orbit subject.
 
-This removes the previous system's defining trick — the inner-highlight-plus-drop-shadow capsule recipe that made chrome read as a physical object. Under this reference an object is made by its fill and its keyline, not by its light.
+**The chrome is the single exception**, and it is deliberate. A liquid-glass material is defined by its light: a specular top edge, a shaded bottom edge, and a drop shadow that puts it above the canvas rather than cut into it. Take those away and translucency alone reads as a washed-out rectangle. So the glass carries `0 10px 34px` plus two inset edges, and nothing else in the product is allowed either.
+
+The rule is therefore not "no shadows" but **"no shadows on content"**. Elevation here distinguishes the layer you operate the product with from the layer the product is about.
 
 ## Surfaces
 
 - **Obsidian Canvas** (`#000000`) — `position: fixed; inset: 0`, `cursor: grab`. The infinite field, image tiles, media wells, the graph stage.
-- **Graphite Chrome** (`#0e0e0e`) — the floating bar and the related bar, contained at a 20px radius.
+- **Liquid Glass** (`rgba(29,29,31,0.78)` / `rgba(255,255,255,0.82)`) — the floating bar, result strip and related bar: translucent, blurred, specular-edged capsules. The only material in the product you can see through, and the only one that casts a shadow. Graphite `#0e0e0e` remains as its no-`backdrop-filter` fallback.
 - **Carbon Panel** (`#1d1d1f`) — note tiles, focus overlay, command palette, result strip.
 - **White Light Mode** (`#ffffff`) — the light-theme counterpart: White tiles and panels, Carbon `#1d1d1f` text, Cobalt `#0066cc` links, the same 28px geometry and the same shadowless rule.
 
@@ -260,7 +282,12 @@ Two budgets, both collapsing to instant under `prefers-reduced-motion: reduce`. 
 
 Everything else is near-instant: 140ms on the hover veil, 240ms on the focus panel in both directions, 160ms on its scrim. CSS transitions take the `--ease` token directly; Svelte's JS transitions take `cubicOut`, which is the same curve for practical purposes — a transition needs an easing *function*, not a CSS bezier. No hover fades on tiles, no skeleton shimmer, no page transitions.
 
-**An animation that only plays one way is a bug, not a style.** The focus panel shipped with a CSS enter keyframe and no exit, which measured as a one-frame cut on close: present at opacity 1, absent on the next frame. Anything that animates in must animate out. Transitions must never apply to library tiles — the keyed list churns constantly as tiles cross the cull window, and animating each one leaves a permanent backlog of entering and dying nodes.
+**An animation that only plays one way is a bug, not a style.** This system got it wrong twice, in two different ways, and both measured as a one-frame cut:
+
+- The focus panel had a CSS enter keyframe and no exit. CSS cannot animate a node that is already out of the DOM, and the panel is unmounted the moment focus clears.
+- The orbit's out-transition was gated on `orbit` being true — but leaving the orbit is precisely what removes those tiles, so by the time the transition was read the flag was already false and the duration collapsed to zero. **An out-transition must never depend on the state whose removal triggers it.** Ask the leaving element what it is; do not ask the component what mode it is now in.
+
+The second one is the subtler trap, and it is invisible in code review: the expression looks symmetrical with the enter case and reads as correct. Transitions must never apply to library tiles — the keyed list churns constantly as tiles cross the cull window, and animating each one leaves a permanent backlog of entering and dying nodes.
 
 ## Imagery
 

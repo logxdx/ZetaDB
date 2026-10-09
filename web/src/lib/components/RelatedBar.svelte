@@ -43,9 +43,16 @@
     max-width: calc(100vw - var(--inset) * 2);
     display: flex; align-items: center; gap: 14px;
     height: var(--strip-h); padding: 0 8px 0 6px;
-    background: var(--chrome);
-    border: 1px solid var(--keyline);
-    border-radius: var(--r-nav);
+    color: var(--on-glass);
+    background: var(--glass-bg);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--glass-border);
+    box-shadow: var(--glass-sheen);
+    border-radius: var(--r-pill);
+  }
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .bar { background: var(--chrome); }
   }
   img {
     width: 40px; height: 40px; object-fit: cover;
@@ -53,41 +60,44 @@
   }
   .notechip {
     width: 40px; height: 40px; display: grid; place-items: center;
-    background: var(--surface); border-radius: var(--r-pill);
-    color: var(--muted);
+    background: var(--glass-fill); border-radius: var(--r-pill);
+    color: var(--on-glass-dim);
   }
   .what { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
   .title {
     font-family: var(--font-display); font-size: 19px; font-weight: 600;
     line-height: 1.21; letter-spacing: var(--ls-19);
-    color: var(--text);
+    color: var(--on-glass);
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     max-width: 34vw;
   }
-  .muted { color: var(--muted); }
+  /* On-glass secondary, not Ash — see tokens.css. */
+  .muted { color: var(--on-glass-dim); }
   .none { color: var(--warn); }
 
-  .toggle { display: flex; gap: 6px; margin-left: 8px; }
+  /* Borderless inside the glass, like the sort row: the filled state is
+     a tint of the material rather than a panel laid on top of it. */
+  .toggle { display: flex; gap: 2px; margin-left: 8px; }
   .toggle button {
-    background: none; color: var(--muted);
-    border: 1px solid var(--outline); border-radius: var(--r-pill);
-    padding: 5px 13px; cursor: pointer;
+    background: none; color: var(--on-glass-dim);
+    border: 0; border-radius: var(--r-pill);
+    padding: 6px 13px; cursor: pointer;
     font-family: var(--font-content); font-size: var(--fs-xs);
     font-weight: 500; line-height: 16px; letter-spacing: var(--ls-ctl);
     transition: background 140ms var(--ease), color 140ms var(--ease);
   }
-  .toggle button:hover { color: var(--text); }
-  .toggle button.on { color: var(--text); background: var(--surface); }
+  .toggle button:hover { color: var(--on-glass); }
+  .toggle button.on { color: var(--on-glass); background: var(--glass-fill); }
 
   .close {
-    background: none; color: var(--muted);
-    border: 1px solid var(--outline); border-radius: var(--r-compact);
-    padding: 0; width: 32px; height: 32px; cursor: pointer;
+    background: none; color: var(--on-glass-dim);
+    border: 0; border-radius: var(--r-pill);
+    padding: 0; width: 36px; height: 36px; cursor: pointer;
     display: grid; place-items: center;
     font-family: var(--font-content); font-size: var(--fs-md); line-height: 1;
     transition: color 140ms var(--ease), background 140ms var(--ease);
   }
-  .close:hover { color: var(--text); background: var(--surface); }
+  .close:hover { color: var(--on-glass); background: var(--glass-fill); }
 
   @media (max-width: 620px) { .title { max-width: 30vw; } }
 </style>

@@ -336,10 +336,25 @@
       ? { duration: 0 }
       : { duration: 420, delay: Math.min(rank * 26, 520),
           start: 0.3, opacity: 0, easing: cubicOut };
-  const leave = () =>
-    !orbit || reduced
+
+  /* The out-transition's parameters are read when a tile STARTS leaving,
+     and by then `orbit` is already false — leaving the orbit is the very
+     thing that removed these tiles. Gating on it therefore guaranteed
+     `duration: 0` on every close, and the whole ring vanished in one
+     frame while the entrance took 420ms. That asymmetry is what read as
+     janky: it opened like a bloom and shut like a power cut.
+
+     Ask the TILE what it is instead of asking the component what mode it
+     is in. Library keys start with "L" and still leave instantly, which
+     is the behaviour the churn problem above requires; orbit and focus
+     tiles unwind, outermost ranks trailing, so the ring collapses the
+     way it grew. */
+  const isOrbitTile = (t: Tile) => t.key[0] !== "L";
+  const leave = (t: Tile) =>
+    reduced || !isOrbitTile(t)
       ? { duration: 0 }
-      : { duration: 220, start: 0.4, opacity: 0, easing: cubicOut };
+      : { duration: 260, delay: Math.min(t.rank * 12, 180),
+          start: 0.4, opacity: 0, easing: cubicOut };
 </script>
 
 <svelte:window onkeydown={key} onpointermove={move} onpointerup={up} onpointercancel={up} />
@@ -353,7 +368,7 @@
             style:width="{t.w}px" style:height="{t.h}px"
             style:z-index={t.isFocus ? 2 : 1}
             in:scale={enter(t.rank)}
-            out:scale={leave()}
+            out:scale={leave(t)}
             onclick={(e) => tileClick(e, t.item.id)}
             aria-label={t.item.title ?? `item ${t.item.id}`}>
       {#if t.item.kind === "image" && t.item.thumb_url}

@@ -181,26 +181,44 @@
   }
   .chrome > :global(*) { pointer-events: auto; }
 
+  /* Liquid glass. The bar is a material, not a panel: it lets the library
+     show through, blurs it, and carries a specular top edge plus a soft
+     lift. This is the ONE place the product is allowed translucency or a
+     shadow — every content surface stays flat and opaque. */
+  .bar, :global(.chrome .round) {
+    background: var(--glass-bg);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--glass-border);
+    box-shadow: var(--glass-sheen);
+    color: var(--on-glass);
+  }
+  /* Without backdrop-filter the glass would be a flat wash over the
+     photographs, so fall back to the opaque chrome instead. */
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .bar, :global(.chrome .round) { background: var(--chrome); }
+  }
+
   .bar {
     flex: 1 1 auto; min-width: 0;
     height: var(--chrome-h);
     display: flex; align-items: center; gap: 10px; padding: 6px 6px 6px 0;
-    background: var(--chrome);
-    border: 1px solid var(--keyline);
-    border-radius: var(--r-nav);
+    border-radius: var(--r-pill);
   }
   /* The bar IS the field, so the focus ring lands on the container rather
      than nesting a second outlined pill inside a 44px bar. */
-  .bar:focus-within { outline: 1px solid var(--blue); outline-offset: 1px; }
+  .bar:focus-within { outline: 1px solid var(--blue); outline-offset: 2px; }
 
   .bar input {
     flex: 1 1 auto; min-width: 0;
     background: none; border: 0; outline: none;
-    color: var(--text); padding: 0 6px 0 18px;
+    color: var(--on-glass); padding: 0 6px 0 20px;
     font-family: var(--font-content);
     font-size: var(--fs-md); letter-spacing: var(--ls-17);
   }
-  .bar input::placeholder { color: var(--muted); }
+  /* Ash tops out near 2.3:1 on glass over a bright photograph, so the
+     chrome's secondary text is dimmed-but-light rather than mid-grey. */
+  .bar input::placeholder { color: var(--on-glass-dim); }
 
   /* The one filled blue control in the product. The reference spends its
      concentrated blue on exactly this kind of control and nothing else. */
@@ -214,20 +232,30 @@
   }
   .plus:hover { filter: brightness(1.12); }
 
-  .queue, .note { color: var(--link); white-space: nowrap; }
+  /* Electric Link lands at 2.8:1 on glass over a bright photograph, so the
+     live counters take the on-glass colour and earn their emphasis from
+     weight instead. */
+  .queue, .note {
+    color: var(--on-glass); font-weight: 500; white-space: nowrap;
+  }
 
+  /* A true circle at the bar's own height, so the two read as one set of
+     glass objects. It was previously sized by its content and came out a
+     squat 43x19 slab beside a 44px bar. */
   :global(.chrome .round) {
-    flex: 0 0 auto; height: var(--chrome-h); min-width: var(--chrome-h);
-    padding: 0 14px;
-    background: var(--chrome);
-    border: 1px solid var(--keyline);
-    border-radius: var(--r-compact);
-    color: var(--muted); cursor: pointer;
+    flex: 0 0 auto;
+    width: var(--chrome-h); height: var(--chrome-h);
+    padding: 0; border-radius: var(--r-pill);
+    cursor: pointer;
     font-size: var(--fs-xs); letter-spacing: var(--ls-ctl);
     display: inline-grid; place-items: center;
-    transition: color 140ms var(--ease);
+    transition: background 140ms var(--ease);
   }
-  :global(.chrome .round:hover) { color: var(--text); }
+  /* An inset spread tints the glass without replacing it, so the blur and
+     the specular edge survive the hover. */
+  :global(.chrome .round:hover) {
+    box-shadow: var(--glass-sheen), inset 0 0 0 999px var(--glass-fill);
+  }
 
   /* Result strip — the reference's announcement band, contained rather
      than full-bleed, because the canvas is fixed at inset 0 and nothing
@@ -239,21 +267,26 @@
     width: max-content; max-width: calc(100vw - var(--inset) * 2);
     display: flex; align-items: center; gap: 14px;
     height: var(--strip-h); padding: 0 10px 0 20px;
-    color: var(--text);
+    color: var(--on-glass);
     font-size: var(--fs-sm); line-height: 20px; letter-spacing: var(--ls-14);
-    background: var(--surface);
-    border: 1px solid var(--keyline);
-    border-radius: var(--r-nav);
+    background: var(--glass-bg);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--glass-border);
+    box-shadow: var(--glass-sheen);
+    border-radius: var(--r-pill);
+  }
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .sumline { background: var(--chrome); }
   }
   .sumline strong { font-weight: 600; }
-  .ret { color: var(--muted); }
+  .ret { color: var(--on-glass-dim); }
   .ret::before { content: "· "; opacity: 0.5; }
-  .seeds { color: var(--muted); }
-  /* Embedded controls on a dark strip are links, not buttons. */
+  .seeds { color: var(--on-glass-dim); }
   .sumline button {
-    background: none; border: 0; color: var(--link);
+    background: none; border: 0; color: var(--on-glass);
     font-family: var(--font-content); font-size: var(--fs-sm);
-    letter-spacing: var(--ls-14);
+    font-weight: 500; letter-spacing: var(--ls-14);
     padding: 2px 8px; cursor: pointer; border-radius: var(--r-link);
   }
   .sumline button:hover { text-decoration: underline; }

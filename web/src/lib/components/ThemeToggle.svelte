@@ -54,16 +54,20 @@
 <style>
   /* Sizing and the capsule skin come from whichever chrome hosts it; this
      only owns the icon. */
+  /* Size and skin come from the chrome that hosts it; this owns only the
+     icon. It used to set its own width/height AND override them again on
+     .round — and because Svelte appends a scope class, `button.round`
+     out-specified the chrome's `.chrome .round`, so the control collapsed
+     to its content and sat beside a 44px bar as a 43x19 slab. Nothing
+     here may touch the box any more. */
   button {
-    display: grid; place-items: center; padding: 0;
-    background: none; border: 0; border-radius: 999px;
-    width: 26px; height: 26px;
-    color: var(--muted); cursor: pointer;
+    display: grid; place-items: center;
+    background: none; border: 0;
+    color: var(--on-glass-dim); cursor: pointer;
     transition: color 140ms var(--ease);
   }
-  button.round { width: auto; height: auto; }
-  button:hover { color: var(--text); }
-  svg { width: 15px; height: 15px; }
+  button:hover { color: var(--on-glass); }
+  svg { width: 16px; height: 16px; }
   svg :global(circle), svg :global(path) {
     fill: none; stroke: currentColor; stroke-width: 1.3;
     stroke-linecap: round; stroke-linejoin: round;
