@@ -56,12 +56,13 @@ def test_cosine_conversion_against_sqlite_vec():
 
 
 def test_model_wrappers_are_singletons():
-    """Regression: each QwenEmbedder owns a llama-server subprocess, and
+    """Regression: the Qwen embedder owned a llama-server subprocess, and
     vocab.resolve_or_propose() constructed one per proposed tag name. A
     single captioning batch then tried to spawn ~40 servers and killed the
-    process. Same class of bug loaded jina-clip twice onto a 6 GB card, and
-    EG2 inherits the risk: its vision encoder is the pool A tenant and a
-    second CUDA session would fail to allocate just as silently."""
+    process. Same class of bug loaded jina-clip twice onto a 6 GB card.
+    Both models are gone now, but EG2 inherits the risk: its vision encoder
+    is the pool A tenant and a second CUDA session would fail to allocate
+    just as silently."""
     from server.models.eg2 import engine as eg2_engine
     from server.models.joytag import engine as joytag_engine
     from server.models.ppocr import engine as ppocr_engine
@@ -79,7 +80,7 @@ def test_no_module_constructs_a_model_directly():
     offenders = []
     for py in root.rglob("*.py"):
         for n, line in enumerate(py.read_text().splitlines(), 1):
-            if re.search(r"\b(Eg2|QwenEmbedder|JinaClip|JoyTag|PPOCR)\(\)", line) \
+            if re.search(r"\b(Eg2|JoyTag|PPOCR)\(\)", line) \
                     and "_engine = " not in line:
                 offenders.append(f"{py.relative_to(root)}:{n}: {line.strip()}")
     assert not offenders, "construct via engine() instead:\n" + "\n".join(offenders)

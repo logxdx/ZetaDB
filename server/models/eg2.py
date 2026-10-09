@@ -62,8 +62,8 @@ log = logging.getLogger(__name__)
 # Task instruction prefixes, from the model card's prefix table. These apply
 # to TEXT ONLY - images are passed with no prefix at all. Omitting them
 # still works but measurably costs precision, and query/document asymmetry
-# is the whole point: mixing the two sides was already shown to hurt with
-# Qwen (see qwen_embed.QUERY_PREFIX).
+# is the whole point: mixing the two sides measurably hurt retrieval with
+# the Qwen embedder this replaced, too.
 QUERY_PREFIX = "task: search result | query: "
 SIMILARITY_PREFIX = "task: sentence similarity | query: "
 

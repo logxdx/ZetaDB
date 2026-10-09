@@ -7,8 +7,9 @@ import sys, time
 sys.path.insert(0,"/run/media/logx/EVM1-256/code/iwashere")
 from pathlib import Path
 from server.models.llama_server import LlamaServer
-d = Path("/run/media/logx/EVM1-256/code/iwashere/data/models/qwen_embed")
-m = next(d.glob("*.gguf"))
+# Any GGUF will do - this tests llama_server's lifecycle, not a model.
+d = Path("/run/media/logx/EVM1-256/code/iwashere/data/models")
+m = next(iter(sorted(d.rglob("*.gguf"))))
 s = LlamaServer(m, ctx=512, ngl=0, embedding=True, cpu_only=True)
 s.start()
 print(s.proc.pid, flush=True)

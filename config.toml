@@ -55,25 +55,6 @@ pool      = "A"
 resolution = 448
 threshold_default = 0.40
 
-[models.jina_clip]
-# One combined ONNX carries BOTH towers; loading it once serves image
-# embedding (pool A) and text embedding (CPU). int8 per the quant policy.
-role      = "multimodal-embedding"
-repo      = "jinaai/jina-clip-v2"
-backend   = "onnx"
-file_glob = "onnx/model_int8.onnx"
-dtype     = "int8"
-pool      = "A"
-dim       = 1024
-
-[models.qwen_embed]
-role      = "text-embedding"
-repo      = "Qwen/Qwen3-Embedding-0.6B-GGUF"
-backend   = "llama.cpp"
-file_glob = "*Q8_0.gguf"
-pool      = "CPU"
-dim       = 1024
-
 [models.eg2]
 # EmbeddingGemma 2 (Apache-2.0). One 768-d space for text AND images, which
 # is what lets vec_text and vec_jina collapse into a single table and
@@ -81,10 +62,10 @@ dim       = 1024
 # second time through Qwen purely to have one space holding both notes and
 # images.
 #
-# Replaces models.jina_clip and models.qwen_embed as of schema v3. Nothing
-# in the serving path loads either of them any more; their entries and
-# weights are kept only so scripts/eg2_check.py can still run the Qwen text
-# baseline. Delete both once the retrieval quality here is settled.
+# Replaced models.jina_clip and models.qwen_embed in schema v3; both are
+# gone, along with ~2.3 GB of weights and the llama-server subprocess the
+# embedding path used to need. llama_server.py stays - the captioner is
+# still a llama.cpp model.
 #
 # dtype is int8 ("quantized") because it is the smallest and the fastest,
 # NOT because fp16 is unsafe. [M0] measured against the unquantised graphs

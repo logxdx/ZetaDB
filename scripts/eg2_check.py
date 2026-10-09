@@ -6,8 +6,8 @@ numbers, because every failure mode in this swap is silent:
 
   * fp16 returns NaN or degraded vectors instead of erroring (Google's card)
   * a wrong <|image|> splice still produces a plausible-looking vector
-  * every [M0] threshold in config.toml was measured against jina/Qwen
-    cosines and means nothing in a 768-d Gemma space
+  * every [M0] threshold in config.toml has to be measured in THIS space;
+    the ones inherited from the previous models meant nothing here
 
 So this measures rather than asserts. Run it before touching schema.sql.
 
@@ -135,28 +135,6 @@ def check_images(e, limit: int, report: dict) -> None:
     report["cross_modal"] = out
 
 
-def check_baseline(report: dict) -> None:
-    """The same text probes through Qwen3-Embedding-0.6B, so the swap is a
-    comparison and not a leap. MTEB multilingual has Qwen at 64.33 against
-    EG2's 61.36, so a small text regression is the expected result - what
-    matters is whether it shows up on THIS corpus."""
-    from server.models.qwen_embed import engine as qwen_engine
-    q = qwen_engine()
-    if not q.available:
-        print("\n  (qwen_embed weights absent - no baseline)")
-        return
-    print("\n── baseline: Qwen3-Embedding-0.6B ─────────────────────────")
-    rows = []
-    for query, right, wrong in TEXT_PROBES:
-        qv = unpack(q.embed(query))
-        dv = [unpack(b) for b in q.embed_many([right, wrong])]
-        cr, cw = cos(qv, dv[0]), cos(qv, dv[1])
-        rows.append({"query": query, "right": cr, "wrong": cw, "margin": cr - cw})
-        print(f"{query[:42]:<42} {cr:8.3f} {cw:8.3f} {cr - cw:8.3f}")
-    report["baseline_qwen"] = rows
-    print(f"\n  mean margin {np.mean([r['margin'] for r in rows]):.3f}")
-
-
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -164,7 +142,6 @@ def main() -> int:
     ap.add_argument("--soft-tokens", type=int, choices=(70, 140, 280, 560, 1120),
                     help="override models.eg2.image_soft_tokens; attention is "
                          "quadratic in patch count, so this is the VRAM knob")
-    ap.add_argument("--no-baseline", action="store_true", help="skip the Qwen comparison")
     ap.add_argument("--json", action="store_true", help="machine-readable output")
     args = ap.parse_args()
 
@@ -180,8 +157,6 @@ def main() -> int:
     print(f"eg2: {e.describe()}  vision={'yes' if e.vision_available else 'NO'}")
     check_text(e, report)
     check_images(e, args.images, report)
-    if not args.no_baseline:
-        check_baseline(report)
 
     if args.json:
         print("\n" + json.dumps(report, indent=2))
