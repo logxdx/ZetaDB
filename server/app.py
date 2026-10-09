@@ -47,7 +47,7 @@ def _register_unloaders() -> None:
     def free_pool_a() -> None:
         for mod, getter in (("server.models.ppocr", "engine"),
                             ("server.models.joytag", "engine"),
-                            ("server.models.jina_clip", "engine")):
+                            ("server.models.eg2", "engine")):
             try:
                 import importlib
                 importlib.import_module(mod).__dict__[getter]().unload()
@@ -124,12 +124,11 @@ async def lifespan(app: FastAPI):
 
 def _shutdown_models() -> None:
     """llama-server runs as a subprocess; without this it survives the
-    parent and keeps holding VRAM, and successive runs stack up orphans."""
-    try:
-        from server.models.qwen_embed import engine as qwen_engine
-        qwen_engine().stop()
-    except Exception:
-        log.debug("qwen shutdown failed", exc_info=True)
+    parent and keeps holding VRAM, and successive runs stack up orphans.
+
+    The embedding model no longer needs stopping: EG2 is an in-process ONNX
+    session, not a subprocess. Only the captioner still spawns one.
+    """
     try:
         from server.ingest.stages import caption
         caption.unload()

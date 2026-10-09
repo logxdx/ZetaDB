@@ -165,29 +165,35 @@ CREATE VIRTUAL TABLE IF NOT EXISTS fts_items USING fts5(
   tokenize='unicode61 remove_diacritics 2'
 );
 
--- Vector spaces. Never mixed: one table per embedding space.
--- Qwen3-Embedding-0.6B, 1024-d. Notes always; images too when
--- embeddings.qwen_covers_image_text is on (spec 9.4).
-CREATE VIRTUAL TABLE IF NOT EXISTS vec_text USING vec0(
-  item_id INTEGER PRIMARY KEY,
-  embedding FLOAT[1024]
-);
-
--- jina-clip-v2 shared space.
---   kind='image'   -> visual tower over the image
---   kind='imgtext' -> text tower over caption + flow_text
-CREATE VIRTUAL TABLE IF NOT EXISTS vec_jina USING vec0(
+-- ONE vector space, 768-d, EmbeddingGemma 2. Notes, images and vocabulary
+-- terms are all directly comparable, which is what retired the spec 9.4
+-- deviation: an image's caption used to be embedded a second time through
+-- Qwen purely so that one space existed containing both notes and images.
+--
+--   kind='item'    the canonical searchable vector.
+--                  notes  -> body + title
+--                  images -> the image INTERLEAVED with its own caption and
+--                            OCR text, as one vector (spec 9.3)
+--   kind='visual'  images only: the image alone, no text.
+--
+-- Both kinds exist because they answer different questions, and the search
+-- API already exposes that split as "similar wording" vs "looks similar".
+-- The visual row is also what zero-shot tag scoring must use: scoring the
+-- term "chart" against an item vector that already contains the image's OCR
+-- text would match any screenshot whose text merely says "chart", which is
+-- the exact leak vocab_terms.requires_text exists to prevent.
+CREATE VIRTUAL TABLE IF NOT EXISTS vec_items USING vec0(
   rowid INTEGER PRIMARY KEY,
   item_id INTEGER,
   kind TEXT,
-  embedding FLOAT[1024]
+  embedding FLOAT[768]
 );
 
--- Vocabulary term embeddings (Qwen3-Embedding-0.6B) for the merge gate
--- and for tag-seed expansion at query time.
+-- Vocabulary term embeddings, same space as everything else - so a term can
+-- be scored against an image directly, with no separate CLIP text tower.
 CREATE VIRTUAL TABLE IF NOT EXISTS vec_vocab USING vec0(
   term_id INTEGER PRIMARY KEY,
-  embedding FLOAT[1024]
+  embedding FLOAT[768]
 );
 
 -- Perceptual hashes for near-duplicate detection.

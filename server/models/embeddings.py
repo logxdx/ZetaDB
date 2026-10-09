@@ -1,10 +1,12 @@
 """Embedding model access.
 
-Two spaces, never mixed (spec 9.3):
-  - Qwen3-Embedding-0.6B  -> vec_text   (notes, and image text when enabled)
-  - jina-clip-v2          -> vec_jina   (image tower + its own text tower)
+ONE space (spec 9.3). EmbeddingGemma 2 embeds notes, images and vocabulary
+terms into the same 768-d vectors, so any of them can be compared with any
+other. The two-space arrangement this replaced - Qwen3-Embedding for text,
+jina-clip-v2 for images - could not compare a note with an image at all,
+which is what spec 9.4's duplicate caption embedding existed to paper over.
 
-Both are lazily loaded and both return None when their weights are absent,
+The embedder is lazily loaded and returns None when its weights are absent,
 so search degrades to BM25 + tags instead of failing.
 """
 from __future__ import annotations
@@ -15,14 +17,18 @@ from typing import Callable
 
 log = logging.getLogger(__name__)
 
-_text_embedder: Callable[[str], bytes] | None = None
-_jina_text: Callable[[str], bytes] | None = None
-_jina_image = None
-_probed = {"text": False, "jina": False}
+_embedder: Callable[[str], bytes] | None = None
+_probed = False
 
 
 def pack(vec) -> bytes:
-    """float32 little-endian blob, L2-normalised, for sqlite-vec."""
+    """float32 little-endian blob, L2-normalised, for sqlite-vec.
+
+    Normalisation is not optional and not only for cosine: Matryoshka
+    truncation slices a unit vector, and a slice of a unit vector is not
+    unit length. Skipping the re-normalise degrades ranking silently -
+    plausible scores, wrong order.
+    """
     import numpy as np
     a = np.asarray(vec, dtype="float32").ravel()
     n = float(np.linalg.norm(a))
@@ -31,43 +37,38 @@ def pack(vec) -> bytes:
     return struct.pack(f"<{a.size}f", *a.tolist())
 
 
-def get_text_embedder():
-    global _text_embedder
-    if _probed["text"]:
-        return _text_embedder
-    _probed["text"] = True
+def get_embedder():
+    """Query-side text embedder: applies the SearchQuery task prefix.
+
+    Document-side text and images go through server.models.eg2 directly -
+    they need the asymmetric document prefix, and images need no prefix at
+    all, which a single `str -> bytes` callable cannot express.
+    """
+    global _embedder, _probed
+    if _probed:
+        return _embedder
+    _probed = True
     try:
-        from server.models.qwen_embed import engine as qwen_engine
-        emb = qwen_engine()
-        if emb.available:
-            _text_embedder = emb.embed
-            log.info("text embedder ready: %s", emb.describe())
+        from server.models.eg2 import engine as eg2_engine
+        e = eg2_engine()
+        if e.available:
+            _embedder = e.embed_text
+            log.info("embedder ready: %s", e.describe())
     except Exception:
-        log.debug("text embedder unavailable", exc_info=True)
-    return _text_embedder
+        log.debug("embedder unavailable", exc_info=True)
+    return _embedder
 
 
-def get_jina_text_embedder():
-    global _jina_text
-    if _probed["jina"]:
-        return _jina_text
-    _probed["jina"] = True
-    try:
-        from server.models.jina_clip import engine as clip_engine
-        clip = clip_engine()
-        if clip.available:
-            _jina_text = clip.embed_text
-            log.info("jina-clip text tower ready")
-    except Exception:
-        log.debug("jina-clip unavailable", exc_info=True)
-    return _jina_text
+# Kept as the old name so callers that only want "embed a query" keep
+# working; there is no longer a second space to distinguish it from.
+get_text_embedder = get_embedder
 
 
 def reset() -> None:
     """Force re-probe after a model download."""
-    global _text_embedder, _jina_text
-    _text_embedder = _jina_text = None
-    _probed["text"] = _probed["jina"] = False
+    global _embedder, _probed
+    _embedder = None
+    _probed = False
 
 
 def cosine_from_l2(distance: float) -> float:

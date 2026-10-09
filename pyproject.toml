@@ -20,7 +20,13 @@ dependencies = [
 [project.optional-dependencies]
 # Installed on demand by scripts/probe.py --install <group>
 torch = ["torch>=2.14", "safetensors>=0.8", "einops>=0.8"]
-onnx = ["onnxruntime-gpu>=1.30", "tokenizers>=0.20"]
+onnx = ["onnxruntime-gpu>=1.30", "tokenizers>=0.20",
+        # Gemma4ImageProcessorPil only: EmbeddingGemma 2 resizes
+        # aspect-preserving to a multiple of patch*pool and emits
+        # flattened 16x16 patches plus (row, col) ids. Reimplementing
+        # that from processor_config.json is a silent-wrongness risk
+        # for no gain. The PIL backend is numpy-only - no torch.
+        "transformers>=5.17"]
 ocr = ["opencv-python-headless>=4.10", "pyclipper>=1.3", "shapely>=2.0", "pyyaml>=6.0"]
 needle = ["cactus-needle>=3.0"]
 hf = ["huggingface-hub>=0.28"]

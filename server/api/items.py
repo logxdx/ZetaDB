@@ -219,9 +219,8 @@ def patch_item(item_id: int, payload: dict = Body(...)) -> dict:
 @router.delete("/items/{item_id}")
 def delete_item(item_id: int) -> dict:
     def work(conn: sqlite3.Connection) -> None:
-        for t in ("vec_text", "vec_phash"):
+        for t in ("vec_items", "vec_phash"):
             conn.execute(f"DELETE FROM {t} WHERE item_id = ?", (item_id,))
-        conn.execute("DELETE FROM vec_jina WHERE item_id = ?", (item_id,))
         conn.execute("DELETE FROM fts_items WHERE rowid = ?", (item_id,))
         conn.execute("DELETE FROM items WHERE id = ?", (item_id,))
     writer.submit(work)

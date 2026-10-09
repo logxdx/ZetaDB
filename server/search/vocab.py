@@ -99,8 +99,12 @@ def embed_vocab() -> int:
         "WHERE t.state = 'active' AND v.term_id IS NULL").fetchall()
     if not rows:
         return 0
-    from server.models.qwen_embed import engine as qwen_engine
-    vecs = qwen_engine().embed_many([r["term"] for r in rows])
+    from server.models.eg2 import engine as eg2_engine
+    # Query side: a term is used to retrieve items, which is the asymmetric
+    # case the SearchQuery prefix is trained for. The same prefix is used
+    # when a query is embedded in hybrid._tag_seeds, so the two sides of
+    # that comparison match.
+    vecs = eg2_engine().embed_texts([r["term"] for r in rows], is_query=True)
 
     def work(c: sqlite3.Connection) -> None:
         for r, v in zip(rows, vecs, strict=True):
@@ -138,8 +142,8 @@ def resolve_or_propose(name: str) -> tuple[int | None, str]:
     emb = get_text_embedder()
     if emb is not None:
         try:
-            from server.models.qwen_embed import engine as qwen_engine
-            vec = qwen_engine().embed_many([name])[0]
+            from server.models.eg2 import engine as eg2_engine
+            vec = eg2_engine().embed_texts([name], is_query=True)[0]
             near = conn.execute(
                 "SELECT term_id, distance FROM vec_vocab WHERE embedding MATCH ? AND k = 1 "
                 "ORDER BY distance", (vec,)).fetchone()
@@ -177,9 +181,14 @@ def _propose(name: str, near_term_id: int | None = None) -> None:
 def calibrate_clip(sample: int | None = None) -> int:
     """Per-term mu/sigma over a sample of images.
 
-    Raw CLIP cosines sit in a compressed, term-dependent band (measured here
-    at roughly 0.17-0.36), so one global threshold is meaningless. Each term
-    stores its own distribution and scores by z-score (spec 7.3).
+    Zero-shot cosines sit in a compressed, term-dependent band, so one
+    global threshold is meaningless. Each term stores its own distribution
+    and scores by z-score (spec 7.3).
+
+    The band MOVED with the model and the stored mu/sigma do not carry over:
+    jina-clip put a confident text-image match at 0.17-0.36, while EG2 [M0]
+    puts a matching caption at ~0.79 and a non-matching one at ~0.50. Any
+    calibration written before schema v3 is meaningless and must be re-run.
     """
     import numpy as np
     import struct
@@ -187,19 +196,19 @@ def calibrate_clip(sample: int | None = None) -> int:
     n = sample or cfg.get("tagging.clip_calibration_sample", 500)
     conn = reader()
     rows = conn.execute(
-        "SELECT embedding FROM vec_jina WHERE kind = 'image' LIMIT ?", (n,)).fetchall()
+        "SELECT embedding FROM vec_items WHERE kind = 'visual' LIMIT ?", (n,)).fetchall()
     if len(rows) < 8:
         log.info("only %d image vector(s); skipping CLIP calibration", len(rows))
         return 0
     mat = np.stack([np.array(struct.unpack(f"<{len(r['embedding'])//4}f", r["embedding"]))
                     for r in rows])
 
-    from server.models.jina_clip import engine as clip_engine
-    clip = clip_engine()
-    if not clip.available:
+    from server.models.eg2 import engine as eg2_engine
+    e = eg2_engine()
+    if not e.available:
         return 0
     terms = active_terms(conn)
-    vecs = clip.embed_texts([t.prompt() for t in terms])
+    vecs = e.embed_texts([t.prompt() for t in terms], is_query=True)
     updates = []
     for t, v in zip(terms, vecs, strict=True):
         tv = np.array(struct.unpack(f"<{len(v)//4}f", v))
@@ -215,6 +224,11 @@ def calibrate_clip(sample: int | None = None) -> int:
     return len(updates)
 
 
+def cfg_clip_band_lo() -> float:
+    """Bottom of the observed term-image cosine band for the current model."""
+    return load().get("tagging.clip_band_lo", 0.47)
+
+
 def clip_score(term: Term, cosine: float) -> float:
     """Calibrated z-score squashed to 0-1.
 
@@ -225,7 +239,16 @@ def clip_score(term: Term, cosine: float) -> float:
     29-photo corpus that accepted 53 of 54 terms for a single image.
     """
     if term.clip_mu is None or not term.clip_sigma:
-        return max(0.0, min(1.0, (cosine - 0.15) / 0.25))   # uncalibrated fallback
+        # Uncalibrated fallback, scaled to the band this model actually
+        # produces. [M0] EG2 term-image cosines run 0.470-0.671 over a real
+        # corpus, so the old (cosine - 0.15) / 0.25 - written for jina's
+        # 0.17-0.37 - saturated at 1.0 for literally every term, which the
+        # fusion then accepted outright. Deliberately conservative: it tops
+        # out below a 0.40 threshold on its own, so an uncalibrated term can
+        # reach the review queue but can never auto-accept. Calibration is
+        # what unlocks the upper range (spec 7.3).
+        lo = cfg_clip_band_lo()
+        return max(0.0, min(0.5, (cosine - lo) / 0.40))
     cfg = load()
     # A relative score alone says "unusually X for THIS corpus", not "is X".
     # On a homogeneous library every term finds its outliers regardless of

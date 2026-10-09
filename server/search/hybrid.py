@@ -1,4 +1,4 @@
-"""Hybrid retrieval: tag path + BM25 + two vector spaces, fused with RRF.
+"""Hybrid retrieval: tag path + BM25 + two vector views, fused with RRF.
 
 The tag path is what implements the original brief's example - searching
 "tree" returns items tagged `tree` AND items tagged with terms semantically
@@ -125,7 +125,30 @@ def _tagged(conn: sqlite3.Connection, seeds, limit: int) -> list[tuple[int, floa
 
 
 def _knn(conn: sqlite3.Connection, table: str, vec: bytes, limit: int,
-         kind: str | None = None, min_cos: float = 0.0) -> list[tuple[int, float]]:
+         kind: str | None = None, min_cos: float = 0.0,
+         rel_margin: float = 0.0) -> list[tuple[int, float]]:
+    """Top-k, then TWO gates, because they answer different questions and
+    neither one covers the other. [M0] measured on a 29-image corpus:
+
+      min_cos (absolute)  "is anything here good enough at all?"
+          A query with no answer in the corpus - "recipe for sourdough
+          bread" against nature photos - still gets 29 KNN rows back, all
+          bunched at ~0.50. Only an absolute floor can say "none of these".
+
+      rel_margin (relative)  "where does this result set fall off?"
+          A query with many answers - "mountain landscape" - clears 0.55 for
+          26 of 29 images because the whole corpus is outdoor photography.
+          Cutting at (best - margin) keeps the 6 that are actually close.
+
+    The relative gate ALONE fails case one outright: when nothing matches,
+    the tail is flat, every row sits within the margin of the best, and all
+    29 are admitted. The absolute floor alone fails case two. Both, in that
+    order, handle both.
+
+    Ranking itself does not depend on either: _rrf fuses by RANK, so these
+    only decide who becomes a candidate, and - via `reasons` - which "why"
+    badge the UI is entitled to show.
+    """
     where = "embedding MATCH ? AND k = ?"
     params: list = [vec, limit]
     if kind is not None:
@@ -139,14 +162,18 @@ def _knn(conn: sqlite3.Connection, table: str, vec: bytes, limit: int,
     for r in rows:
         cos = cosine_from_l2(float(r["distance"]))
         if cos < min_cos:
-            continue      # KNN always returns k rows; without a floor a
-        iid = int(r[col])  # small corpus "matches" every query
+            continue
+        iid = int(r[col])
         out[iid] = max(out.get(iid, -1.0), cos)
-    return sorted(out.items(), key=lambda kv: -kv[1])
+    ranked = sorted(out.items(), key=lambda kv: -kv[1])
+    if rel_margin > 0 and ranked:
+        cut = ranked[0][1] - rel_margin
+        ranked = [x for x in ranked if x[1] >= cut]
+    return ranked
 
 
 def search(q: str, *, limit: int = 60, filters: dict | None = None,
-           embed_text=None, embed_jina_text=None) -> dict:
+           embed_query=None) -> dict:
     """Run every available retriever and fuse. Vector retrievers are skipped
     silently when their model is not loaded, so search degrades to BM25 +
     tags rather than failing (this is what makes M2 usable before M3)."""
@@ -162,27 +189,37 @@ def search(q: str, *, limit: int = 60, filters: dict | None = None,
     pool = max(limit * 3, 50)
     groups: dict[str, list[tuple[int, float]]] = {}
 
-    seeds = _tag_seeds(conn, q, cfg.get("search.tag_seed_min_cos", 0.75), embed_text)
+    seeds = _tag_seeds(conn, q, cfg.get("search.tag_seed_min_cos", 0.75), embed_query)
     if (tagged := _tagged(conn, seeds, pool)):
         groups["tag"] = tagged
     if (lex := _lexical(conn, q, pool)):
         groups["lexical"] = lex
-    if embed_text is not None:
+    if embed_query is not None:
+        # One query vector, one space, two views of it. text_vec asks "does
+        # this item MEAN what was asked" (kind='item', which for an image
+        # already carries its caption and OCR); img_vec asks "does it LOOK
+        # like it" (kind='visual', pixels only). Both are the same KNN with
+        # a metadata filter - the two separate models and the two separate
+        # tables this replaced are gone, but the distinction the UI shows
+        # the user as "similar wording" vs "looks similar" survives.
         try:
-            hits_t = _knn(conn, "vec_text", embed_text(q), 50,
-                          min_cos=cfg.get("search.min_cos_text", 0.30))
-            if hits_t:
-                groups["text_vec"] = hits_t
+            qv = embed_query(q)
         except Exception:
-            log.debug("vec_text knn skipped", exc_info=True)
-    if embed_jina_text is not None:
-        try:
-            hits_i = _knn(conn, "vec_jina", embed_jina_text(q), 50,
-                          min_cos=cfg.get("search.min_cos_jina", 0.18))
-            if hits_i:
-                groups["img_vec"] = hits_i
-        except Exception:
-            log.debug("vec_jina knn skipped", exc_info=True)
+            qv = None
+            log.debug("query embedding failed", exc_info=True)
+        if qv is not None:
+            rel = cfg.get("search.rel_margin", 0.08)
+            for group, kind, key, default in (
+                ("text_vec", "item", "search.min_cos_item", 0.55),
+                ("img_vec", "visual", "search.min_cos_visual", 0.55),
+            ):
+                try:
+                    hits = _knn(conn, "vec_items", qv, 50, kind=kind,
+                                min_cos=cfg.get(key, default), rel_margin=rel)
+                    if hits:
+                        groups[group] = hits
+                except Exception:
+                    log.debug("vec_items knn skipped for kind=%s", kind, exc_info=True)
 
     hits = _rrf(groups, weights, k)
     hits = _apply_filters(conn, hits, filters or {})

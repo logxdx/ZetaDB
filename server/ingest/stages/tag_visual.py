@@ -4,10 +4,17 @@ Scores every active vocabulary term against each image from two
 independent signals and fuses them (spec 7.2-7.4):
 
   JoyTag  terms with a Danbooru alias, independent per-tag sigmoid
-  CLIP    every term, zero-shot cosine calibrated per term
+  EG2     every term, zero-shot cosine calibrated per term
 
-The jina image vector is computed here too and reused by the embed stage,
-so the CLIP tagging path costs nothing extra.
+This stage owns the kind='visual' row in vec_items: the image with NO text
+in it. That is deliberate. Scoring the term "chart" against the kind='item'
+vector - which interleaves the image with its own OCR text - would match
+any screenshot whose text merely says "chart", which is the exact leak
+vocab_terms.requires_text exists to prevent.
+
+The term vectors come from the same model and live in the same space, so
+there is no separate CLIP text tower any more: a term string and an image
+are directly comparable.
 """
 from __future__ import annotations
 
@@ -21,7 +28,7 @@ import numpy as np
 from server.config import load
 from server.db.conn import reader
 from server.db.writer import writer
-from server.models.jina_clip import JinaClip, engine as clip_engine
+from server.models.eg2 import Eg2, engine as eg2_engine
 from server.models.joytag import engine as joytag_engine
 from server.search import vocab as V
 
@@ -35,12 +42,16 @@ def _unpack(b: bytes) -> np.ndarray:
     return np.array(struct.unpack(f"<{len(b) // 4}f", b), dtype=np.float32)
 
 
-def _term_vectors(terms: list[V.Term], clip: JinaClip) -> dict[int, np.ndarray]:
-    """Text-tower vectors for each term prompt, cached across batches."""
+def _term_vectors(terms: list[V.Term], e: Eg2) -> dict[int, np.ndarray]:
+    """Vectors for each term prompt, cached across batches.
+
+    Query side, not document side: a term is being used to retrieve images,
+    which is the asymmetric case the SearchQuery prefix is trained for.
+    """
     global _term_vecs, _term_vec_stamp
     missing = [t for t in terms if t.id not in _term_vecs]
     if missing:
-        vecs = clip.embed_texts([t.prompt() for t in missing])
+        vecs = e.embed_texts([t.prompt() for t in missing], is_query=True)
         for t, v in zip(missing, vecs, strict=True):
             _term_vecs[t.id] = _unpack(v)
         _term_vec_stamp = time.time()
@@ -75,18 +86,18 @@ def run(item_ids: list[int]) -> None:
         except Exception:
             log.exception("joytag scoring failed")
 
-    # --- CLIP zero-shot: covers every term, including those Danbooru lacks
-    clip = clip_engine()
+    # --- EG2 zero-shot: covers every term, including those Danbooru lacks
+    e = eg2_engine()
     img_vecs: list[np.ndarray | None] = [None] * len(rows)
     packed_img: list[bytes | None] = [None] * len(rows)
     tvecs: dict[int, np.ndarray] = {}
-    if clip.available:
+    if e.vision_available:
         try:
-            packed_img = clip.embed_images(paths)
+            packed_img = [e.embed_image(p) for p in paths]   # no text: visual only
             img_vecs = [_unpack(p) if p else None for p in packed_img]
-            tvecs = _term_vectors(terms, clip)
+            tvecs = _term_vectors(terms, e)
         except Exception:
-            log.exception("clip tagging failed")
+            log.exception("eg2 visual tagging failed")
 
     review_floor = cfg.get("tagging.review_floor", 0.25)
     now = int(time.time())
@@ -122,14 +133,15 @@ def run(item_ids: list[int]) -> None:
             tag_rows.append((iid, t.id, fused, "machine", state, now))
 
     def work(conn2: sqlite3.Connection) -> None:
-        # Persist the image vector here: the embed stage would otherwise
-        # load a second copy of the model to recompute it (spec 7.2).
+        # Persist the visual vector here: it is computed anyway for tag
+        # scoring, and this stage already holds the pool A lease the vision
+        # encoder needs (spec 7.2).
         for i, r in enumerate(rows):
             if packed_img[i] is not None:
-                conn2.execute("DELETE FROM vec_jina WHERE item_id = ? AND kind = 'image'",
+                conn2.execute("DELETE FROM vec_items WHERE item_id = ? AND kind = 'visual'",
                               (r["id"],))
                 conn2.execute(
-                    "INSERT INTO vec_jina(item_id, kind, embedding) VALUES (?, 'image', ?)",
+                    "INSERT INTO vec_items(item_id, kind, embedding) VALUES (?,'visual',?)",
                     (r["id"], packed_img[i]))
         for row in score_rows:
             conn2.execute(

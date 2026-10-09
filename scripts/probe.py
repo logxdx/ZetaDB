@@ -44,7 +44,16 @@ def download(key: str) -> int:
     if spec.get("runtime_fetched"):
         print(f"{key}: fetched at runtime by its own engine, nothing to download")
         return 0
-    patterns = [p for p in (spec.get("file_glob"), spec.get("mmproj_glob")) if p]
+    # file_glob may be a single pattern or a list: a model whose weights
+    # are split across several named files (EmbeddingGemma 2 ships a
+    # backbone and a per-modality encoder, each with its own .onnx_data)
+    # cannot be selected with one glob without dragging in the rest.
+    patterns: list[str] = []
+    for g in (spec.get("file_glob"), spec.get("mmproj_glob")):
+        if isinstance(g, str):
+            patterns.append(g)
+        elif g:
+            patterns.extend(g)
     if patterns:
         # Small sidecars only: tokenizers, configs, label lists. Never
         # "*.onnx_data" - that is external weight data for a model variant

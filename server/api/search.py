@@ -9,7 +9,7 @@ import sqlite3
 from server.db.conn import reader
 from server.models.embeddings import cosine_from_l2
 from server.search import hybrid
-from server.models.embeddings import get_text_embedder, get_jina_text_embedder
+from server.models.embeddings import get_embedder
 
 router = APIRouter(prefix="/api", tags=["search"])
 
@@ -25,8 +25,7 @@ def search(q: str, limit: int = 60, group: bool = False,
         q, limit=limit,
         filters={"kind": kind, "project": project, "since": since,
                  "until": until, "has_ocr": has_ocr},
-        embed_text=get_text_embedder(),
-        embed_jina_text=get_jina_text_embedder(),
+        embed_query=get_embedder(),
     )
     conn = reader()
     ids = [h.item_id for h in res["hits"]]
@@ -92,18 +91,17 @@ def related(item_id: int, limit: int = 60, mode: str = "similar") -> dict:
             scored[r["item_id"]] = scored.get(r["item_id"], 0.0) + 1.0
             shared.setdefault(r["item_id"], []).append(r["term"])
     else:
-        for table, kind in (("vec_jina", "image"), ("vec_text", None)):
+        for kind in ("visual", "item"):
             try:
-                where = "item_id = ?" + ("" if kind is None else " AND kind = ?")
-                params = (item_id,) if kind is None else (item_id, kind)
                 row = conn.execute(
-                    f"SELECT embedding FROM {table} WHERE {where} LIMIT 1", params).fetchone()
+                    "SELECT embedding FROM vec_items WHERE item_id = ? AND kind = ? LIMIT 1",
+                    (item_id, kind)).fetchone()
                 if row is None:
                     continue
-                q = "embedding MATCH ? AND k = ?" + ("" if kind is None else " AND kind = ?")
-                qp: list = [row["embedding"], limit + 1] + ([] if kind is None else [kind])
+                qp: list = [row["embedding"], limit + 1, kind]
                 for n in conn.execute(
-                    f"SELECT item_id, distance FROM {table} WHERE {q} ORDER BY distance", qp
+                    "SELECT item_id, distance FROM vec_items "
+                    "WHERE embedding MATCH ? AND k = ? AND kind = ? ORDER BY distance", qp
                 ):
                     other = int(n["item_id"])
                     if other == item_id:

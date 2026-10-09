@@ -74,6 +74,59 @@ file_glob = "*Q8_0.gguf"
 pool      = "CPU"
 dim       = 1024
 
+[models.eg2]
+# EmbeddingGemma 2 (Apache-2.0). One 768-d space for text AND images, which
+# is what lets vec_text and vec_jina collapse into a single table and
+# retires the spec 9.4 deviation - today an image's caption is embedded a
+# second time through Qwen purely to have one space holding both notes and
+# images.
+#
+# Replaces models.jina_clip and models.qwen_embed as of schema v3. Nothing
+# in the serving path loads either of them any more; their entries and
+# weights are kept only so scripts/eg2_check.py can still run the Qwen text
+# baseline. Delete both once the retrieval quality here is settled.
+#
+# [!] dtype is int8 ("quantized"), NOT fp16. Google's card states the
+# activation range exceeds fp16's dynamic range and that the model returns
+# NaN or silently degraded vectors rather than erroring. That rules out the
+# *_fp16 and *_q4f16 exports AND the TensorRT FP16 path used for PP-OCR -
+# the one place in this stack where FP16 is the measured win does not
+# generalise here, and the failure is silent.
+#
+# The 300M audio encoder is deliberately not in file_glob: intake accepts
+# images and text only, so it would be ~195 MB of weights we never load.
+role       = "multimodal-embedding"
+repo       = "onnx-community/embeddinggemma-2-ONNX"
+backend    = "onnx"
+file_glob  = ["onnx/model_quantized.onnx*", "onnx/vision_encoder_quantized.onnx*"]
+dtype      = "quantized"
+pool       = "A"             # vision encoder only
+# The backbone is the only half a search query needs, so it stays off the
+# GPU and a query never waits for pool A to wake - the same reasoning that
+# put jina's text tower and Qwen on the CPU. The soft tokens crossing from
+# the vision encoder are ~280x512 floats, ~570 KB, so the split is free.
+backbone_device   = "cpu"
+dim               = 768
+# Matryoshka truncation: 0 keeps all 768. The published table puts 512d at
+# 61.17 MTEB vs 61.36, and 64.32 MIEB vs 64.64 - very nearly free. Not
+# enabled yet: changing the model and the dimension in one step would make
+# a bad retrieval result impossible to attribute. Revisit once 768d is
+# calibrated. Truncating REQUIRES re-normalising; pack() already does.
+truncate_dim      = 0
+# 70 | 140 | 280 | 560 | 1120 soft tokens per image. This is the VRAM knob,
+# not a minor quality dial: patch count scales with the budget and attention
+# is quadratic in it. [M0] measured on 8 captioned images, image + caption +
+# OCR interleaved:
+#   280 (checkpoint default) -> 1554 MB, 0.69 s/image, recall@1 100%, margin 0.309
+#   140                      ->  624 MB, 0.51 s/image, recall@1 100%, margin 0.291
+# 280 costs 2.5x the VRAM for 0.018 of margin. Pool A has ~1739 MB once the
+# captioner holds its 3661 MB of pool B, so at 280 the vision encoder alone
+# fills pool A and PP-OCR + JoyTag have nowhere to live. 140 it is.
+# (8 images is a thin sample - re-measure on a real corpus before trusting
+# the recall figure. The margin delta is the sturdier of the two numbers.)
+image_soft_tokens = 140
+max_text_tokens   = 8192
+
 [models.vlm_default]
 role         = "captioner"
 repo         = "unsloth/Qwen3.5-4B-GGUF"
@@ -158,9 +211,11 @@ escalate_on_box_count = 40
 escalate_on_text_len  = 600
 
 [embeddings]
-text_dim               = 1024
-multimodal_dim         = 1024
-qwen_covers_image_text = true   # see spec 9.4
+# One space, one width. spec 9.4's qwen_covers_image_text is gone with it:
+# it existed only to force notes and images into a comparable space by
+# embedding every image's caption a second time. EmbeddingGemma 2 puts them
+# in the same space natively, so there is nothing left to work around.
+dim = 768
 
 [tagging]
 w_joytag  = 0.45
@@ -175,7 +230,24 @@ clip_calibration_sample = 500
 # itself, which accepted 53 of 54 terms per image on a real corpus.
 clip_z_center = 2.0
 # Absolute cosine floor, below which no relative score can lift a term.
-clip_abs_floor = 0.22
+# [!] [M0] This is the weak point of the EG2 swap, and the number is doing
+# much less work than it used to. Term prompt -> visual vector over 10 real
+# images, the entire band across six unrelated terms:
+#   tree       0.479 .. 0.651        screenshot  0.556 .. 0.607
+#   chart      0.533 .. 0.631        whiteboard  0.519 .. 0.580
+#   invoice    0.470 .. 0.671        diagram     0.524 .. 0.578
+# overall 0.470 .. 0.671, mean 0.556. "invoice" and "tree" score the SAME
+# images almost identically: the absolute cosine barely encodes whether the
+# concept is present. EG2 is retrieval-trained, not contrastively trained
+# like CLIP, and its text-image cosines compress into a narrow high band.
+# 0.45 therefore only catches true garbage; the per-term z-score below is
+# carrying essentially all of the signal now. Run calibrate_clip() and read
+# the review queue before trusting this path - and if it is noisy, cut
+# tagging.w_clip rather than fiddling with this floor.
+clip_abs_floor = 0.45
+# Bottom of the observed term-image cosine band, used only by the
+# uncalibrated fallback. Moves with the model, like everything else here.
+clip_band_lo   = 0.47
 clip_z_slope  = 1.0
 suppressed_tags_file = "vocab/suppressed.txt"
 
@@ -191,21 +263,64 @@ w_tag            = 1.30
 w_lexical        = 1.00
 w_text_vec       = 1.00
 w_img_vec        = 0.90
-# [M0] Measured with Qwen3-Embedding-0.6B and its query instruction prefix:
-# an exact term match scores ~0.67-0.71 and a true synonym ~0.55-0.61, so
-# the original 0.75 could never fire. Vector floors keep KNN from returning
-# the whole corpus as "matches" when the corpus is small.
-tag_seed_min_cos = 0.55
-min_cos_text     = 0.30
-min_cos_jina     = 0.18
+# [M0] Re-measured for EmbeddingGemma 2. NONE of the old values carry over:
+# the whole cosine scale moved, and every one of them was measured against
+# Qwen or jina. Query -> vocab term, with the SearchQuery prefix on both:
+#   tree -> tree             1.000   exact
+#   trees -> tree            0.890   plural
+#   screen capture -> shot   0.924   synonym
+#   graph -> chart           0.835   synonym
+#   forest -> tree           0.706   synonym
+#   whiteboard -> chart      0.689   unrelated (arguably not)
+#   invoice -> tree          0.517   unrelated
+# 0.70 is the only line that separates these, and it is THIN - a real
+# synonym at 0.706 against a non-synonym at 0.689. Watch the `seeds` array
+# in search responses; if junk terms appear, raise this before anything else.
+tag_seed_min_cos = 0.70
+# Vector floors keep KNN from returning the whole corpus as "matches" on a
+# small library. [M0] a query scores 0.755-0.789 against the right item and
+# 0.416-0.515 against the wrong one, in both kinds, so 0.55 clears the
+# wrong-answer band with room on either side. Note how much higher this is
+# than the 0.30/0.18 it replaces: EG2 has a high floor, and carrying the old
+# numbers over would have left these filtering nothing at all.
+min_cos_item     = 0.55
+min_cos_visual   = 0.55
+# Relative gate, applied AFTER the floors: keep only what is within this
+# much of the best hit for THIS query. The floors answer "is anything good
+# enough"; this answers "where does the result set fall off", and the two
+# are not interchangeable. [M0] on 29 images, candidates admitted:
+#                        floor only   relative only   both
+#   "sourdough recipe"        0            29          0     <- nothing relevant
+#   "mountain landscape"     26             6          6     <- many relevant
+# A relative gate alone cannot reject a query with no answer: the tail goes
+# flat and everything sits within the margin of the best. 0.08 keeps the
+# genuinely-close set on broad queries without touching precise ones
+# (caption-as-query recall@1 is 100% with or without it).
+rel_margin       = 0.08
 
 [graph]
 seed_top_k         = 8
-seed_min_cos_jina  = 0.62
-seed_min_cos_qwen  = 0.70
+# [M0] Measured as an all-pairs distribution over a real 32-item corpus,
+# because "is 0.70 close?" is meaningless without knowing what an ORDINARY
+# pair scores. In this space the median pair is already 0.765:
+#            min    p50    p90    p99    max
+#   item    0.541  0.765  0.823  0.867  0.905
+#   visual  0.609  0.766  0.824  0.866  0.982
+#   >= 0.70 ->  63% of item pairs, 88% of visual pairs
+#   >= 0.80 ->  25% / 23%
+#   >= 0.85 ->   2% / 3%
+# Carrying the old 0.70/0.62 across produced 90 semantic links over 32
+# items and made a dashboard screenshot's nearest neighbours a mountain
+# range and some abstract art - every pair "related" is the same as none
+# of them being related. 0.85 sits at roughly p99: genuinely unusual
+# closeness, which is what a dotted edge is supposed to mean.
+seed_min_cos_item    = 0.85
+seed_min_cos_visual  = 0.85
 default_hops       = 2
 max_nodes          = 60
 
 [dedupe]
 phash_hamming_max = 6
+# Not re-measured in the 768-d space. Near-duplicate notes should still sit
+# very close to 1.0, but confirm before relying on it to suppress anything.
 note_cosine_max   = 0.97

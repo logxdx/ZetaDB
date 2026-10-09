@@ -19,23 +19,24 @@ def seed_edges(conn: sqlite3.Connection, item_id: int) -> int:
     cfg = load()
     k = cfg.get("graph.seed_top_k", 8)
     made = 0
-    for table, kind_filter, thresh in (
-        ("vec_text", None, cfg.get("graph.seed_min_cos_qwen", 0.70)),
-        ("vec_jina", "image", cfg.get("graph.seed_min_cos_jina", 0.62)),
+    # One space now, but still two questions: "means something similar"
+    # (kind='item') and "looks similar" (kind='visual'). An edge from either
+    # is worth drawing, and a neighbour found by both simply gets its weight
+    # overwritten with the higher cosine.
+    for kind, thresh in (
+        ("item", cfg.get("graph.seed_min_cos_item", 0.70)),
+        ("visual", cfg.get("graph.seed_min_cos_visual", 0.70)),
     ):
         try:
             row = conn.execute(
-                f"SELECT embedding FROM {table} WHERE item_id = ? LIMIT 1", (item_id,)
-            ).fetchone()
+                "SELECT embedding FROM vec_items WHERE item_id = ? AND kind = ? LIMIT 1",
+                (item_id, kind)).fetchone()
             if row is None:
                 continue
-            where = "embedding MATCH ? AND k = ?"
-            params: list = [row["embedding"], k + 1]
-            if kind_filter:
-                where += " AND kind = ?"
-                params.append(kind_filter)
             for n in conn.execute(
-                f"SELECT item_id, distance FROM {table} WHERE {where} ORDER BY distance", params
+                "SELECT item_id, distance FROM vec_items "
+                "WHERE embedding MATCH ? AND k = ? AND kind = ? ORDER BY distance",
+                [row["embedding"], k + 1, kind]
             ):
                 other = int(n["item_id"])
                 cos = cosine_from_l2(float(n["distance"]))
@@ -49,7 +50,7 @@ def seed_edges(conn: sqlite3.Connection, item_id: int) -> int:
                     (a, b, cos, int(time.time())))
                 made += 1
         except sqlite3.OperationalError:
-            log.debug("edge seeding skipped for %s", table, exc_info=True)
+            log.debug("edge seeding skipped for kind=%s", kind, exc_info=True)
     return made
 
 

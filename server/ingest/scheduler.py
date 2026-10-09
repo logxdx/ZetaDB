@@ -28,7 +28,11 @@ PIPELINE: dict[str, tuple[str | None, str | None]] = {
     "tag_visual": ("caption",    "A"),
     "caption":    ("extract",    "B"),
     "extract":    ("embed",      None),
-    "embed":      ("finalize",   "A"),   # jina text tower lives in pool A
+    # No pool: the EG2 backbone is CPU-resident by design, so that a search
+    # query never queues behind ingest for pool A. An image reaching this
+    # stage recomputes its soft tokens on the CPU rather than taking a lease
+    # for a sub-second job; the GPU vision pass happens once, in tag_visual.
+    "embed":      ("finalize",   None),
     "finalize":   (None,         None),
 }
 STAGE_ORDER = list(PIPELINE)

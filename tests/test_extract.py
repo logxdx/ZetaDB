@@ -115,14 +115,18 @@ def test_clip_score_requires_an_outlier_not_an_average():
     """Regression: the calibrated z-score was squashed with logistic(z),
     and logistic(0)=0.5 — so a term scoring merely AVERAGE for the corpus
     already cleared a 0.40 threshold. Measured on 29 real photos, that
-    accepted 53 of 54 vocabulary terms for a single image."""
+    accepted 53 of 54 vocabulary terms for a single image.
+
+    The cosines here are on EmbeddingGemma 2's scale, not jina's: [M0] term
+    prompts score 0.470-0.671 against real images with a mean of 0.556. The
+    logic under test is unchanged — only the band it operates on moved."""
     from server.search.vocab import Term, clip_score
 
     t = Term(id=1, term="bird", joytag_alias=None, prompt_template="a photo of {term}",
-             threshold=0.40, clip_mu=0.20, clip_sigma=0.03)
-    at_mean = clip_score(t, 0.20)             # z = 0
-    one_sigma = clip_score(t, 0.23)           # z = 1
-    three_sigma = clip_score(t, 0.29)         # z = 3
+             threshold=0.40, clip_mu=0.556, clip_sigma=0.03)
+    at_mean = clip_score(t, 0.556)            # z = 0
+    one_sigma = clip_score(t, 0.586)          # z = 1
+    three_sigma = clip_score(t, 0.646)        # z = 3
 
     assert at_mean < 0.20, f"an average term must not pass: {at_mean}"
     assert one_sigma < t.threshold, f"1 sigma must not pass: {one_sigma}"
@@ -140,14 +144,19 @@ def test_clip_score_falls_back_when_uncalibrated():
 def test_clip_score_has_an_absolute_floor():
     """A relative z-score says "unusually X for THIS corpus", not "is X".
     On a homogeneous library every term finds its own outliers whether or
-    not the concept is present, so a raw-cosine floor is needed too."""
+    not the concept is present, so a raw-cosine floor is needed too.
+
+    This matters MORE under EmbeddingGemma 2, not less: its term-image
+    cosines compress into roughly 0.47-0.67 whether or not the concept is
+    present, so z-scores find outliers in pure noise far more readily than
+    jina's wider band did."""
     from server.search.vocab import Term, clip_score
 
     t = Term(id=1, term="whiteboard", joytag_alias=None, prompt_template="{term}",
-             threshold=0.40, clip_mu=0.14, clip_sigma=0.02)
+             threshold=0.40, clip_mu=0.38, clip_sigma=0.02)
     # 3 sigma above a LOW mean is still a low absolute similarity
-    assert clip_score(t, 0.20) == 0.0, "below the absolute floor must score zero"
-    assert clip_score(t, 0.26) > 0.0
+    assert clip_score(t, 0.44) == 0.0, "below the absolute floor must score zero"
+    assert clip_score(t, 0.50) > 0.0
 
 
 def test_text_bearing_terms_are_declared():
