@@ -1492,6 +1492,60 @@ Two things about finding it are worth keeping:
   the first two fixes were never actually loaded. A cache-busting query string on the reload is the
   cheapest way to be sure you are looking at what you just built.
 
+## 17.9 [M7] The captioner bake-off — Gemma 3 4B, Moondream, and two 2B models
+
+Qwen3.5-4B was chosen in M0 on reputation, not on this corpus. `scripts/vlm_bakeoff.py` re-asks the
+question properly: every candidate runs through the production path — same prompt, same GBNF
+grammar, same 1024 px downscale, same `LlamaServer` — over all 29 images, and is scored on what a
+caption is actually FOR here.
+
+The scoring metric matters more than the leaderboard. A caption feeds EmbeddingGemma 2 and becomes
+part of how an image is found, so each caption is embedded as a `SearchQuery` and KNN'd against the
+`kind='visual'` vectors — the image with **no text in it**. Scoring against `kind='item'` would
+reward a caption for echoing OCR text already baked into that vector, which flatters text-dense
+screenshots and measures nothing.
+
+| model | VRAM | s/cap | json | r@1 | margin | ocr | chars | tags |
+|---|---|---|---|---|---|---|---|---|
+| **Qwen3.5-4B** UD-Q3_K_XL | 3747 | 3.47 | **29/29** | **1.00** | **0.1408** | 0.711 | 177 | 8.1 |
+| Gemma 3 4B IT UD-Q3_K_XL | 3591 | 3.33 | 29/29 | 0.97 | 0.1217 | 0.622 | 216 | 6.9 |
+| InternVL3 2B Q4_K_M | **2033** | **1.92** | 25/29 | 0.96 | 0.1279 | 0.422 | 119 | 9.6 |
+| SmolVLM2 2.2B Q4_K_M | 3811 | 1.73 | 18/29 | 0.94 | 0.0840 | — | 52 | 5.3 |
+| Moondream2 f16 | — | — | 0/29 | — | — | — | — | — |
+
+**The incumbent stays.** Gemma 3 4B is 156 MB lighter and 4% faster and loses on every quality axis
+that matters: a worse retrieval margin (0.1217 against 0.1408 — the margin, not recall@1, is the
+number that still separates models once all of them "pass"), worse OCR grounding, and fewer tags.
+It also prefixes nearly every caption with "The image shows" / "The image depicts", which is why its
+captions are *longer* while saying less — that boilerplate is dead weight in an embedding. On item
+13 it was simply wrong, calling a sculpture of stacked Mercedes-Benz cars "a robotic insect-like
+vehicle" where both other models saw cars.
+
+**`ocr_recall` is only comparable at 29/29.** It averages over captions that parsed, so a model that
+fails on exactly the hard text-dense items scores itself on the easy remainder. InternVL3 first
+measured 0.967 and then 0.422 on a re-run, purely because different items failed; that figure is
+not evidence of anything on its own. Raising `--max-tokens` from 400 to 900 did **not** fix the
+failures — these models ramble inside a grammar-valid string until the cap, rather than being cut
+off just short.
+
+**Moondream2 cannot be served here at all**, and this is a serving fact, not a quality one. Its
+GGUF carries a vicuna chat template that emits no media marker, so `llama-server`'s OAI endpoint
+renders a prompt with zero markers against one bitmap and returns `Failed to tokenize prompt` on
+every image. Injecting `<__media__>` into the message text does not help — the template escapes it.
+The legacy `/completion` + `image_data` path accepts the request and *silently ignores the image*:
+17 tokens evaluated, and a confident description of a river and a boat for a picture of a red
+rectangle and a blue circle. The model itself is fine — `llama-mtmd-cli` describes that same test
+image correctly — but it is unreachable from pool B, which is HTTP + grammar by construction. It
+also trains at `n_ctx_train=2048` against our 16384, and the build warns `missing pre-tokenizer
+type ... GENERATION QUALITY WILL BE DEGRADED`.
+
+**InternVL3 2B is the one to remember.** It holds 1714 MB less VRAM than the incumbent and captions
+in just over half the time, at a retrieval margin between Gemma's and Qwen's. What disqualifies it
+today is that 4 of 29 items produce no usable object, and they are the text-dense ones — the invoice
+is among them. It also transcribes rather than describes, reading a dashboard back as a list of
+bare numbers, which duplicates work PP-OCRv6 already does better (§1.1). If pool B ever has to
+shrink to let pool A coexist, this is the first candidate to re-measure.
+
 ## 18. Open questions
 
 1. What should the seed vocabulary actually contain? It needs ~100–200 terms to be useful at M4. Bootstrapping option: run JoyTag over the first 200 ingested images and promote its most frequent above-threshold tags as seed candidates for manual curation.
