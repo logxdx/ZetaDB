@@ -141,39 +141,6 @@ truncate_dim      = 0
 image_soft_tokens = 140
 max_text_tokens   = 8192
 
-[models.eg2_fp32]
-# Temporary, for measurement only: the unquantised graphs, so "what does
-# int8 actually cost us?" can be answered instead of argued about.
-role       = "multimodal-embedding-reference"
-repo       = "onnx-community/embeddinggemma-2-ONNX"
-backend    = "onnx"
-file_glob  = ["onnx/model.onnx*", "onnx/vision_encoder.onnx*"]
-dtype      = ""
-pool       = "A"
-backbone_device   = "cpu"
-dim               = 768
-truncate_dim      = 0
-image_soft_tokens = 140
-max_text_tokens   = 8192
-
-[models.eg2_fp16]
-# Temporary, for measurement only. Google's card says fp16 returns NaN or
-# silently degraded vectors because the activation range exceeds fp16's
-# dynamic range. That claim is load-bearing - it is why models.eg2 is int8
-# and why the TensorRT FP16 path is off-limits here - so it is worth
-# checking rather than taking on trust.
-role       = "multimodal-embedding-fp16"
-repo       = "onnx-community/embeddinggemma-2-ONNX"
-backend    = "onnx"
-file_glob  = ["onnx/model_fp16.onnx*", "onnx/vision_encoder_fp16.onnx*"]
-dtype      = "fp16"
-pool       = "A"
-backbone_device   = "cpu"
-dim               = 768
-truncate_dim      = 0
-image_soft_tokens = 140
-max_text_tokens   = 8192
-
 [models.vlm_default]
 role         = "captioner"
 repo         = "unsloth/Qwen3.5-4B-GGUF"
