@@ -53,17 +53,19 @@ you an animation is missing when it is not.
   indeterminate Signal Blue bar whose fields fill in as SSE stages land.
   `Canvas.svelte` and `App.svelte` never read `item.status`; the only in-flight
   signal is the counter in the chrome.
-- **Review overlay.** spec §13.1 specifies keyboard bulk triage (`a` accept,
-  `r` reject, `→` next). No component exists, and `/api/review` currently
-  returns ~50 pending tags with nothing to show them. DESIGN.md's dashed-Copper
-  tag outline exists only for this surface and is therefore unused.
 - **Settings overlay.** Named in spec §13.1, not built.
+
+**Built since** — `Review.svelte` (spec §13.1/§13.6): both queues, `a`/`r`/`→`,
+reachable from the Copper "N pending" control in the chrome. Verified in
+Chromium in both themes and at 560px. It is the surface DESIGN.md's
+dashed-Copper tag outline was reserved for, so that token is now spent.
 
 **Not yet verified in a browser** (both themes reachable via
 `Emulation.setEmulatedMedia`)
 
-- Narrow widths below 660px: one column, full-width focus panel, graph at one
-  hop.
+- Narrow widths below 660px for the CANVAS and focus panel — the review
+  overlay is done, the rest is not: one column, full-width focus panel, graph
+  at one hop.
 - Search results and the result strip; the command palette; Focus's `ocr` and
   `graph` tabs.
 - The empty-canvas hero at 80px — it cannot render while the library has items,
@@ -78,6 +80,11 @@ you an animation is missing when it is not.
   button radius and a 48px display size that nothing uses.
 - Svelte transitions use `cubicOut` where CSS uses the `--ease` token. Visually
   indistinguishable at 240ms, but it is two curves for one idea.
+- A theme-contrast trap worth not re-learning: the light theme redefines
+  `--text` but leaves `--steel` at its dark `#333336`, so any
+  `color: var(--text); background: var(--steel)` pair is ~1.3:1 the moment the
+  theme flips. Palette and Review both had it; both now fill with `--border`.
+  Pending/Copper must likewise be reached through `--warn`, never `--copper`.
 - spec §17.6–17.8 still describe the superseded light-first system (3px tiles,
   12px gutter, 172px columns, the chrome-shadow capsule). §13.3 is marked
   superseded; those sections are kept as history and were deliberately not

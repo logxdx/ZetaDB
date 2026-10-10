@@ -52,18 +52,20 @@ PDFs (the layout engine is built so they slot in later — see §6.4). Audio, vi
 ├────────────────────────────────────────────────────────────────┤
 │  Ingest worker (single thread, sole DB writer)                 │
 │    watcher → queue → stage scheduler → GPU arbiter             │
-├──────────────────────────────┬─────────────────────────────────┤
+├──────────────────────────────────┬─────────────────────────────┤
 │  GPU pools (mutually exclusive)  │  CPU-resident (always)      │
 │                                  │                             │
 │  Pool A  "vision-small"          │   Needle 3      (own rt)    │
-│    PP-OCRv6 det+rec  TensorRT    │   Qwen3-Emb-0.6B (llama.cpp)│
-│    JoyTag            PyTorch     │   jina-clip-v2 text tower   │
-│    jina-clip-v2 image tower ONNX │     (ONNX int8)             │
-│                                  │                             │
+│    PP-OCRv6 det+rec  TensorRT    │   EmbeddingGemma 2 backbone │
+│    JoyTag            ONNX int8   │     (ONNX int8) — the half  │
+│    EmbeddingGemma 2              │     a query needs, so a     │
+│      vision encoder  ONNX int8   │     search never waits on   │
+│                                  │     pool A                  │
 │  Pool B  "vlm"  (exactly one)    │                             │
-│    Qwen3.5-4B   Q4_K_M  default  │                             │
-│    Gemma 4 12B  IQ4_XS  escalate │                             │
+│    LFM2.5-VL 3B  Q6 + Q8 mmproj  │                             │
 │    via llama-server subprocess   │                             │
+│    escalation is EFFORT, not a   │                             │
+│    second model (§17.1)          │                             │
 ├──────────────────────────────────┴─────────────────────────────┤
 │  SQLite (WAL)  +  sqlite-vec  +  FTS5      data/iwashere.db    │
 │  Blobs and thumbnails on disk              data/blobs/ thumbs/ │
@@ -83,7 +85,7 @@ No model is loaded at fp32 or fp16 where a quantised form exists.
 | Family | Form | Note |
 |---|---|---|
 | ONNX (PP-OCR, JoyTag) | **static QDQ INT8** | calibrated locally, see §5.1 |
-| ONNX (jina-clip-v2) | **INT8** | published `model_int8`; q4 variants exist but 4-bit measurably degrades cosine geometry, and this model *is* the similarity metric |
+| ONNX (EmbeddingGemma 2) | **int8** | published `*_quantized`; [M0] cosine agreement with fp32 is 0.9954–1.0000 and retrieval margin 0.212 against 0.216, at 509 MB instead of 878 MB |
 | GGUF decoder | **Unsloth UD-Q3_K_XL** | dynamic per-layer quant |
 | GGUF vision projector | **F16** | smallest form Unsloth publishes; quantising an mmproj below Q8 degrades image grounding |
 | KV cache | **q8_0** | at 16k context the f16 cache is the largest non-weight allocation |
@@ -100,17 +102,25 @@ Weight-dependent VRAM figures below remain estimates until the weights are downl
 other row is measured. Per the quantisation policy, decoders use Unsloth Dynamic (UD) quants and
 vision projectors stay at F16/Q8_0 — quantising an mmproj below Q8 measurably degrades grounding.
 
-| Model | Role | Runtime | Precision | Est. VRAM | Pool |
+| Model | Role | Runtime | Precision | VRAM | Pool |
 |---|---|---|---|---|---|
-| PP-OCRv6_small det+rec | OCR | ONNX Runtime TRT/CUDA | **INT8** | see §5.1 | A |
+| PP-OCRv6_medium det+rec | OCR | ONNX Runtime **TensorRT fp16** | fp16 engines from fp32 graphs | see §5.1 | A |
 | JoyTag | vocab tag scoring | ONNX Runtime CUDA | **INT8** | see §5.1 | A |
-| jina-clip-v2 image tower | image embedding | ONNX Runtime CUDA | int8 | **122 MB** load, **1140 MB** peak | A |
-| jina-clip-v2 text tower | text embedding | ONNX Runtime CPU | int8 | **0** (CPU) | — |
+| EmbeddingGemma 2 vision encoder | image → soft tokens | ONNX Runtime CUDA | int8 | **624 MB** at 140 soft tokens | A |
+| EmbeddingGemma 2 backbone | text + image → 768-d | ONNX Runtime **CPU** | int8 | **0** (CPU, on purpose) | — |
 | **Pool A peak** | | | | **~1.2 GB** measured, one stage at a time | |
-| Qwen3.5-4B | captioner | llama.cpp CUDA | UD-Q3_K_XL + mmproj F16, q8_0 KV | 16K ctx, see §5.1 | B |
+| **LFM2.5-VL 3B** | captioner | llama.cpp CUDA | Q6 text + Q8 mmproj, q8_0 KV | **3079 MB** at 16K ctx | B |
+| ~~Qwen3.5-4B~~ | ~~captioner~~ | — | — | 3747 MB — **superseded [M7], kept as `models.vlm_qwen35`** | — |
 | ~~Gemma 4 12B~~ | ~~escalation~~ | — | — | **~6.3 GB — dropped, see §17.1** | — |
-| Qwen3-Embedding-0.6B | text embedding | llama.cpp CPU | Q8_0 | **0** — needs `CUDA_VISIBLE_DEVICES=""` | — |
 | Needle 3 | structured extraction | Cactus runtime CPU | CQ2 | **0** (34 MB weights) | — |
+
+**[M7] The captioner was chosen by measurement, not reputation** — see §17.9 for the bake-off
+against Gemma 3 4B, Qwen3-VL 4B, InternVL3 2B, SmolVLM2 2.2B and Moondream2, and §17.10 for why
+the VLM still does not own OCR.
+
+**[M7c] TensorRT is the OCR default and it works here**, at 0.16 s mean per image against 1.72 s on
+the CPU EP. What used to make it look unreachable was a missing `libcudnn.so`, which ships inside a
+wheel — see the correction in §17.2.
 
 Three VRAM lessons from making this fit:
 
@@ -149,12 +159,13 @@ class GpuArbiter:
 
 - **Qwen3.5-2B/4B** — Apache-2.0. Clear.
 - **Gemma 4 12B** — Apache-2.0. Clear.
-- **Qwen3-Embedding-0.6B** — Apache-2.0. Clear.
+- **EmbeddingGemma 2** — Apache-2.0. Clear, and it is now the only embedding model.
 - **Needle 3** — Apache-2.0. Clear. **[M0]** Note: the package sends anonymous telemetry to a
   Supabase endpoint unless `NEEDLE_TELEMETRY=0` or `DO_NOT_TRACK=1` is set. `server/app.py` sets
   both before import.
 - **PP-OCRv6** — Apache-2.0 (PaddleOCR). Confirm the model weights carry the same.
-- **jina-clip-v2** — ⚠️ Jina has shipped models under CC-BY-NC-4.0. Fine for personal local use, blocks any commercial path. **Verify before building on it.** Fallback if it's a problem: SigLIP-2 SO400M (Apache-2.0).
+- ~~**jina-clip-v2** — ⚠️ CC-BY-NC-4.0, which blocks any commercial path.~~ **Moot [M6]:** it was replaced by EmbeddingGemma 2, so the licence question went with it.
+- **LFM2.5-VL 3B** — the captioner since [M7]. Check Liquid's licence before any commercial path; nothing in §17.9 depends on it, and `models.vlm_qwen35` is a one-line swap back.
 - **JoyTag** — ⚠️ README states no licence. Treat as unlicensed; personal use only until clarified.
 
 ---
@@ -177,10 +188,10 @@ Each stage processes the **entire pending batch** before the next begins. Items 
 | 0 | intake | CPU | BLAKE3 content hash, dedupe check, MIME sniff, EXIF, thumbnail (WebP, 400px long edge), dHash. Row written, item appears in UI. |
 | 1 | ocr | GPU A | PP-OCRv6 det+rec → quads + text + per-box score. Images only. |
 | 2 | layout | CPU | Grid projection (§6) → `layout_text`, `flow_text`, `boxes` JSON. |
-| 3 | tag_visual | GPU A | JoyTag → full 5000-tag score vector; persist only the vocab-relevant slice. jina-clip-v2 image tower → 1024-d image vector. |
-| 4 | caption | GPU B | VLM description. Qwen3.5-4B by default; escalation candidates deferred to a second Gemma 4 sub-batch. |
-| 5 | extract | CPU | Needle 3 × 4 schemas (§8). |
-| 6 | embed | CPU | Qwen3-Embedding-0.6B over note body / image searchable text. jina-clip-v2 text tower over caption + `flow_text`. |
+| 3 | tag_visual | GPU A | JoyTag → full 5813-tag score vector; persist only the vocab-relevant slice. EmbeddingGemma 2 vision encoder → the `kind='visual'` 768-d vector: the image with **no text in it**, which is what keeps zero-shot term scoring from matching a screenshot whose text merely says "chart". |
+| 4 | caption | GPU B | VLM description + `CaptionTags` under one GBNF grammar. **Also re-reads any page PP-OCR under-read (§17.10)**, because pool B is already resident here and doing it at stage 1 would load a second model under a pool A lease. |
+| 5 | extract | CPU | Regex `scan` over the full text, then Needle 3 as a guarded supplement (§8.3). |
+| 6 | embed | CPU | EmbeddingGemma 2 backbone → the `kind='item'` vector. A note takes its text; an image takes the pixels **interleaved with its own caption and OCR text**, as one vector. |
 | 7 | finalize | CPU | Tag fusion + vocab gating (§7), FTS5 upsert, semantic edge seeding (§10), `status='ready'`. |
 
 Stages 1–3 share one Pool A lease. Stage 4 takes a Pool B lease. Stages 0, 2, 5, 6, 7 need no GPU and run while a GPU stage is blocked.
@@ -457,13 +468,18 @@ Two practical notes. First, JoyTag is Danbooru-schema and heavily NSFW-weighted;
 | Signal | Applies to | Produces |
 |---|---|---|
 | **JoyTag** | vocab terms with a Danbooru alias | independent sigmoid 0–1 |
-| **jina-clip-v2 zero-shot** | *any* vocab term | calibrated cosine z-score |
+| **EmbeddingGemma 2 zero-shot** | *any* vocab term | calibrated cosine z-score |
 | **VLM + Needle 3** | any vocab term | membership + Needle confidence |
 
-The CLIP path is what makes arbitrary user vocabulary work at all, and it costs nothing extra: the
-image vector is computed once in Stage 3 and **persisted there** for the embed stage to reuse.
+The zero-shot path is what makes arbitrary user vocabulary work at all, and it costs nothing
+extra: the image vector is computed once in Stage 3 and **persisted there** as `kind='visual'`.
+It is still called "the CLIP path" throughout the config for continuity, but there is no CLIP and
+no separate text tower — a term string and an image are directly comparable because they share one
+space (§9.3).
 
-**[M3] jina-clip-v2 must be split into two single-tower graphs.** The published export declares
+**[M3, superseded] jina-clip-v2 had to be split into two single-tower graphs.** EmbeddingGemma 2
+needs no such surgery: pooling is inside the graph and `sentence_embedding` is the finished vector.
+Kept because the failure mode generalises to any dual-encoder ONNX export. The published export declares
 `input_ids` *and* `pixel_values` as required inputs. Requesting only the text output does **not**
 prune the vision branch — ORT still runs it over whatever dummy pixels you pass, which both wasted
 the compute and OOMed the card on a batch of 512×512 dummies (`Failed to allocate ... 113306112`,
@@ -483,13 +499,19 @@ Raw CLIP cosines are compressed (typically 0.10–0.35) and the usable range dif
 Term prompt template: `"a photo of {term}"` for concrete nouns, `"{term}"` for abstract/style terms
 — a per-term `prompt_template` column, defaulting to the former.
 
-**[M3] Measured cosine bands, which is why this section is not optional.** jina-clip-v2 text↔image
-cosines land in **0.17–0.37** even for a confident match (query "a dark dashboard screenshot with a
-table" scored 0.369 against the right image and 0.196 against the wrong one — correct ranking,
-useless absolute scale). Qwen3-Embedding-0.6B with its query instruction prefix puts an exact term
-match at **0.67–0.71** and a true synonym at **0.55–0.61**. The spec's original
-`tag_seed_min_cos = 0.75` could therefore never fire; it is now 0.55, with vector floors of 0.30
-(text) and 0.18 (jina) so KNN does not return the whole corpus as "matches" on a small library.
+**[M6] Measured cosine bands, which is why this section is not optional — and every number moved
+when the model did.** In EmbeddingGemma 2's space an exact query→term match is 1.000, a plural
+0.890, a synonym 0.706–0.924, and an unrelated pair 0.517–0.689, so `tag_seed_min_cos` is **0.70**
+and that line is thin. Vector floors are **0.55** for both kinds, against the 0.30/0.18 they
+replace — EG2 has a high floor and carrying the old numbers across would have left them filtering
+nothing at all.
+
+**[!] The absolute cosine is the weak part of this path.** Over 10 real images the entire band
+across six unrelated terms is 0.470–0.671: "invoice" and "tree" score the same images almost
+identically. EG2 is retrieval-trained rather than contrastively trained, so its text↔image cosines
+compress into a narrow high band and `clip_abs_floor` only catches true garbage. The per-term
+z-score is carrying essentially all of the signal. If the review queue looks noisy, cut
+`tagging.w_clip` rather than adjusting the floor.
 
 ### 7.4 Fusion
 
@@ -523,7 +545,7 @@ defaults: w_j = 0.45, w_c = 0.30, w_m = 0.25
   kind: artifact
 ```
 
-**Write-time gate.** When the VLM proposes a term not in the vocabulary, embed it with Qwen3-Embedding-0.6B against all existing term embeddings:
+**Write-time gate.** When the VLM proposes a term not in the vocabulary, embed it with EmbeddingGemma 2 against all existing term embeddings:
 
 | max cosine | action |
 |---|---|
@@ -817,36 +839,46 @@ BM25 column weights at query time: `bm25(fts_items, 3.0, 1.0, 1.0, 1.5, 2.0)`.
 
 ### 9.3 Vector tables
 
-Three spaces, never mixed. Both models output 1024-d.
+**One space, 768-d, for everything.** EmbeddingGemma 2 embeds notes, images and vocabulary terms
+into the same geometry, so any of them can be compared with any other. This replaced a two-space
+arrangement — Qwen3-Embedding-0.6B for text, jina-clip-v2 for images — which could not compare a
+note with an image at all, and whose workaround is described and retired in §9.4.
 
 ```sql
--- Qwen3-Embedding-0.6B. Text-native items.
-CREATE VIRTUAL TABLE vec_text USING vec0(
-  item_id INTEGER PRIMARY KEY,
-  embedding FLOAT[1024]
-);
-
--- jina-clip-v2 shared space. kind='image' (image tower)
---                            kind='imgtext' (text tower over caption + flow_text)
-CREATE VIRTUAL TABLE vec_jina USING vec0(
+-- EmbeddingGemma 2, every modality. Two kinds per image, and the
+-- distinction matters:
+--   kind='item'    the searchable vector. A note's text, or an image
+--                  INTERLEAVED with its own caption and OCR text.
+--   kind='visual'  the image with NO text in it. Zero-shot term scoring
+--                  reads this one, so that scoring "chart" against a
+--                  screenshot cannot succeed merely because the screenshot
+--                  says "chart" (that leak is what vocab_terms.requires_text
+--                  exists to prevent).
+CREATE VIRTUAL TABLE vec_items USING vec0(
   rowid INTEGER PRIMARY KEY,
   item_id INTEGER,          -- metadata column
-  kind TEXT,                -- metadata column
-  embedding FLOAT[1024]
+  kind TEXT,                -- metadata column: 'item' | 'visual'
+  embedding FLOAT[768]
 );
 
--- vocabulary term embeddings, for the merge gate and tag-seed expansion
+-- Vocabulary term embeddings, in that same space - which is what lets a
+-- term string be scored against an image directly, with no CLIP text tower.
 CREATE VIRTUAL TABLE vec_vocab USING vec0(
   term_id INTEGER PRIMARY KEY,
-  embedding FLOAT[1024]     -- Qwen3-Embedding-0.6B over the term string
+  embedding FLOAT[768]
 );
 
--- perceptual hashes for near-duplicate detection, Hamming distance
+-- Perceptual hashes for near-duplicate detection, Hamming distance.
 CREATE VIRTUAL TABLE vec_phash USING vec0(
   item_id INTEGER PRIMARY KEY,
   hash BIT[64]
 );
 ```
+
+**Normalisation is not optional.** Every stored vector is L2-normalised, and `pack()` is the only
+place that happens. Matryoshka truncation (`embeddings.truncate_dim`, 0 = keep all 768) slices a
+unit vector, and a slice of a unit vector is not unit length — skipping the re-normalise degrades
+ranking silently, with plausible scores in the wrong order.
 
 **vec0 constraints to design within:** max 16 metadata columns, max 4 partition keys, max 16 auxiliary columns. Metadata supports only `=, !=, <, <=, >, >=` — no `LIKE`, no `IS NULL`. Flat exact KNN is single-digit milliseconds to a few hundred thousand vectors, far beyond this corpus, so no ANN index is needed.
 
@@ -864,13 +896,17 @@ or sqlite-vec reports a float32/bit type mismatch. Distance is Hamming via `vec_
 `int8[N]` works the same way through `vec_int8()`. Metadata `LIKE` is rejected exactly as
 documented. FTS5 and `float[1024]` both confirmed present.
 
-### 9.4 One deviation from the brief, flagged
+### 9.4 ~~One deviation from the brief, flagged~~ — retired [M6]
 
-You specified Qwen3-Embedding-0.6B for text-only items and jina-clip-v2 for images and their text. That is implemented exactly as stated. **I recommend additionally** writing a `vec_text` row for images, embedding their `caption + flow_text` with Qwen3-Embedding-0.6B.
+The brief specified Qwen3-Embedding-0.6B for text-only items and jina-clip-v2 for images, and this
+section recommended *additionally* embedding every image's `caption + flow_text` a second time
+through Qwen, under `embeddings.qwen_covers_image_text`. The reason was that two spaces cannot be
+compared, so without it nothing contained both notes and images and cross-modal ranking had no
+geometry to work in.
 
-Reason: without it there is no single space containing both notes and images, so note↔image semantic edges and cross-modal ranking have nothing to compare in. The cost is one extra CPU embedding per image and ~4 KB of storage.
-
-Controlled by `embeddings.qwen_covers_image_text`, default `true`. Set it to `false` for the literal specified behaviour; the graph then carries image↔image and note↔note edges only.
+**EmbeddingGemma 2 puts them in one space natively, so the workaround is gone** — along with the
+config flag, the duplicate embedding per image, the `vec_text` and `vec_jina` tables, and ~2.3 GB
+of weights. Kept here as the record of why a single space was worth migrating to.
 
 ---
 
@@ -880,10 +916,10 @@ Controlled by `embeddings.qwen_covers_image_text`, default `true`. Set it to `fa
 
 A query string runs four retrievers in parallel, fused by Reciprocal Rank Fusion.
 
-1. **Tag path** — resolve the query to vocabulary terms: exact, then alias, then KNN over `vec_vocab` above cosine 0.75 ("tag seeds"). Items carrying those terms rank by `tag_confidence × term_similarity`. *This is the mechanism behind the original brief's example: searching `tree` matches items tagged `tree`, and also items tagged with terms semantically near `tree`.*
+1. **Tag path** — resolve the query to vocabulary terms: exact, then alias, then KNN over `vec_vocab` above `search.tag_seed_min_cos` ([M6] 0.70; see §7.3 for why that line is thin) ("tag seeds"). Items carrying those terms rank by `tag_confidence × term_similarity`. *This is the mechanism behind the original brief's example: searching `tree` matches items tagged `tree`, and also items tagged with terms semantically near `tree`.*
 2. **Lexical** — FTS5 BM25 with the column weights above.
-3. **Text semantic** — Qwen3-Embedding-0.6B (with its retrieval instruction prefix) KNN over `vec_text`, k = 50.
-4. **Visual semantic** — jina-clip-v2 text tower KNN over `vec_jina`, k = 50, both kinds. This is what makes a plain-language query find an image directly.
+3. **Item semantic** — EmbeddingGemma 2 over the query with its `SearchQuery` prefix, KNN over `vec_items` where `kind='item'`, k = 50.
+4. **Visual semantic** — the *same* query vector, KNN over `vec_items` where `kind='visual'`, k = 50. One embedding call serves both: since §9.3 collapsed the spaces there is no second tower to run, and this is what makes a plain-language query find an image directly.
 
 ### 10.2 Fusion
 
@@ -909,7 +945,9 @@ Structured filters compose as SQL predicates *before* fusion: project, date rang
 
 - **Exact** — BLAKE3 collision at Stage 0. No new item; `source_path` appended to the existing row and the UI says so.
 - **Near-duplicate images** — `vec_phash` Hamming ≤ 6. The item *is* created but `near_dup_of` is set; the canvas collapses near-dup clusters into a single card with a count badge, expandable.
-- **Near-duplicate notes** — cosine > 0.97 in `vec_text`. Same treatment.
+- **Near-duplicate notes** — cosine > `dedupe.note_cosine_max` (0.97) in `vec_items` where
+  `kind='item'`. Same treatment. Not re-measured in the 768-d space: near-duplicate notes
+  should still sit very close to 1.0, but confirm before relying on it to suppress anything.
 
 ---
 
@@ -920,7 +958,7 @@ Structured filters compose as SQL predicates *before* fusion: project, date rang
 ### 11.1 Edges
 
 - **Manual** (`kind='manual'`) — created by the user, `weight = 1.0`, optionally labelled. Rendered as solid lines.
-- **Semantic** (`kind='semantic'`) — seeded in Stage 7: for each new item, take its top-8 neighbours in its native space and keep those above threshold (`0.62` in jina space, `0.70` in Qwen space — both config, both requiring calibration against real data). Rendered as dotted lines with thickness ∝ weight.
+- **Semantic** (`kind='semantic'`) — seeded in Stage 7: for each new item, take its top-8 neighbours above threshold in **both** questions the one space still answers separately — "means something similar" (`kind='item'`) and "looks similar" (`kind='visual'`). [M6] both thresholds are **0.85**, not the 0.70/0.62 they replace: measured as an all-pairs distribution over a real corpus the *median* pair already scores 0.765, so 0.70 called 63% of all pairs related, which is the same as calling none of them related. 0.85 sits at roughly p99. Rendered as dotted lines with thickness ∝ weight.
 
 Semantic edges are recomputed for an item on re-enrichment. Manual edges are never touched by any pipeline stage.
 
@@ -1115,11 +1153,8 @@ escalate_on_text_len = 600
 ctx = 8192
 
 [embeddings]
-text = "Qwen3-Embedding-0.6B"
-text_dim = 1024
-multimodal = "jina-clip-v2"
-multimodal_dim = 1024
-qwen_covers_image_text = true      # see §9.4
+# One model, one space, one width (§9.3). truncate_dim = 0 keeps all 768.
+dim = 768
 
 [tagging]
 w_joytag = 0.45
@@ -1147,8 +1182,8 @@ tag_seed_min_cos = 0.75
 
 [graph]
 seed_top_k = 8
-seed_min_cos_jina = 0.62
-seed_min_cos_qwen = 0.70
+seed_min_cos_item   = 0.85
+seed_min_cos_visual = 0.85
 default_hops = 2
 max_nodes = 60
 
@@ -1184,9 +1219,9 @@ iwashere/
 │   ├── models/
 │   │   ├── ppocr.py            TRT + ORT fallback, engine cache
 │   │   ├── joytag.py
-│   │   ├── jina_clip.py        image tower (GPU) + text tower (CPU)
-│   │   ├── qwen_embed.py       llama.cpp CPU embeddings
-│   │   ├── vlm.py              llama-server lifecycle
+│   │   ├── eg2.py              vision encoder (GPU) + backbone (CPU)
+│   │   ├── embeddings.py       pack/normalise, lazy embedder access
+│   │   ├── llama_server.py     llama-server lifecycle
 │   │   └── needle.py           4 schemas
 │   ├── layout/
 │   │   ├── grid.py             the projection algorithm
@@ -1239,7 +1274,7 @@ iwashere/
 | Needle 3 is weak at generative fields | **Medium [M0, new]** | Measured: duplicated/garbage tags on `CaptionTags`. Mitigated by moving `CaptionTags` to the VLM + GBNF grammar (§8.1). `ProjectRouting` quality still unvalidated — gate it in M5 |
 | **Gemma 4 12B does not fit in 6 GB** | **High [M0, confirmed blocking]** | UD-Q3_K_XL ~5.4 GB + mmproj F16 ~0.9 GB = ~6.3 GB against 5853 MiB usable. Disabled in config. Three options in §17.1 |
 | Needle 3 telemetry on by default | Low [M0, new] | `NEEDLE_TELEMETRY=0` + `DO_NOT_TRACK=1` set in `server/app.py` before import |
-| jina-clip-v2 is CC-BY-NC | Medium | Fine for personal use; confirm before any commercial path. Swap to SigLIP-2 SO400M (Apache-2.0) if needed — same role, same dimensionality after projection |
+| ~~jina-clip-v2 is CC-BY-NC~~ | **CLOSED [M6]** | Replaced by EmbeddingGemma 2, Apache-2.0, which also retired the two-space workaround in §9.4 |
 | JoyTag ships no licence | Medium | Personal use only pending clarification. The CLIP path already covers the full vocabulary, so JoyTag is removable without redesign |
 | TensorRT engine build fragility | Low | ORT is the default. TRT is an optimisation, gated behind successful build + validation |
 | Danbooru vocabulary surfaces NSFW tags | Low | `vocab/suppressed.txt` blocklist applied before fusion |
@@ -1761,7 +1796,8 @@ read across devices.
 - LiteParse grid projection — https://www.llamaindex.ai/blog/how-liteparse-turns-pdfs-into-text-a-deep-dive-into-the-grid-projection-algorithm · https://github.com/run-llama/liteparse
 - Qwen3.5 — https://qwen.ai/blog?id=qwen3.5 · https://huggingface.co/Qwen/Qwen3.5-4B
 - Gemma 4 12B — https://blog.google/innovation-and-ai/technology/developers-tools/introducing-gemma-4-12b/
-- Qwen3-Embedding-0.6B — https://huggingface.co/Qwen/Qwen3-Embedding-0.6B
-- jina-clip-v2 — https://huggingface.co/jinaai/jina-clip-v2
+- EmbeddingGemma 2 — https://huggingface.co/onnx-community/embeddinggemma-2-ONNX
+- LFM2.5-VL 3B — https://www.liquid.ai/blog/lfm2-5-vl-3b · https://docs.liquid.ai/lfm/models/lfm25-vl-3b
+- ~~Qwen3-Embedding-0.6B~~, ~~jina-clip-v2~~ — both retired in [M6], see §9.4
 - sqlite-vec — https://github.com/asg017/sqlite-vec · https://alexgarcia.xyz/sqlite-vec/
 - Hybrid FTS5 + vector + RRF — https://alexgarcia.xyz/blog/2024/sqlite-vec-hybrid-search/index.html
