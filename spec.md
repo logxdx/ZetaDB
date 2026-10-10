@@ -1649,6 +1649,72 @@ effective parameters, not resident ones; the BF16 file is 15 GB. Gemma 4 **E2B**
 excluded on serving grounds rather than quality: neither is reachable through llama.cpp, so neither
 can live in pool B without a second runtime.
 
+## 17.10 [M7c] Could LFM2.5-VL replace PP-OCRv6? No — but PP-OCR has a hole
+
+§1.1 asserts that PP-OCRv6_medium (34.5M) beats billion-scale VLMs on recognition, and the whole
+two-jobs-two-models split rests on it. That was inherited, never measured here.
+`scripts/ocr_bakeoff.py` measures it: five synthetic images whose ground truth is exact *because
+they are rendered from a known string*, plus the library's own two text-dense items transcribed by
+eye. PP-OCR is scored on what the pipeline actually emits — detect, recognise, then the §6 grid
+projection — because `flow_text` is what reaches FTS5, embeddings and extraction.
+
+| case | PP-OCRv6 + layout | LFM2.5-VL @1024 |
+|---|---|---|
+| invoice (synthetic) | **0.005** | 0.015 |
+| metrics table | **0.014** | 0.021 |
+| code block | 0.237 | **0.028** |
+| prose paragraph | 0.908 | **0.028** |
+| small UI chrome (14px) | 0.327 | **0.048** |
+| item 1, the real dashboard | **0.009** | 0.036 |
+| item 4, the real invoice | **0.006** | 0.011 |
+| **median CER** | **0.014** | 0.028 |
+| **mean CER** | 0.215 | **0.027** |
+| **worst CER** | 0.908 | **0.048** |
+| **critical tokens** | **18/19** | 15/19 |
+
+**The mean is a trap and the median is the answer.** PP-OCR is twice as accurate as LFM in the
+typical case and near-perfect on exactly the documents this corpus holds — 0.005 on an invoice,
+0.009 on a real dashboard. Its mean is wrecked by one catastrophic case, not by general weakness.
+
+**PP-OCR keeps the argument that matters.** Critical tokens — emails, URLs, ISO dates, decimal
+amounts — are what `extract.py` is built on, and §5.1 already established that a subtly wrong one is
+worse than a missing one. PP-OCR returned 18 of 19 verbatim. LFM dropped
+`finance@acme.example`, `https://billing.acme.example/inv/8813`, `2026-03-14` and
+`help@iwashere.example`. A VLM paraphrases under pressure; an OCR engine does not. **So the
+captioner does not become the OCR authority, and §1.1 stands.**
+
+Three further reasons replacement is not close, independent of accuracy: LFM emits **no boxes**, so
+`layout/grid.py`, `layout_text`, `boxes_json`, the `escalate_on_box_count` policy and Focus's `ocr`
+tab all die with it; it is ~10x slower per image; and it costs 3079 MB in pool B against PP-OCR's
+~150 MB in pool A, on a card that had to drop an escalation tier for want of room.
+
+**But PP-OCRv6 detection has a real hole, and it is worth fixing.** On a flowing prose paragraph it
+detects **4–5 of 8 lines** and returns garbage for the ones it does find — `'hy-UHDPUyd'`,
+`',PUU'` — for CER 0.908. This is not box-merging: the boxes it returns are single-line height, it
+simply misses the rest. It is not a font-size artifact either; swept from 14 px to 34 px the line
+count stays at 4–5 and CER stays between 0.844 and 0.904. The same engine on the same backend reads
+the invoice at 11 boxes for 11 lines, every score 0.98–1.00, so neither the model nor the provider
+is broken in general — it is specific to dense uniform prose. Code (0.237) and 14 px UI chrome
+(0.327) are weak for the same reason.
+
+That matters more as the library grows than the current corpus suggests: 24 of 29 items today are
+photographs, but an idea-dump accumulates article screenshots and documentation, which is exactly
+the shape that fails.
+
+**The design this points at is a fallback, not a replacement.** When PP-OCR's box count is
+implausibly low for an image's text density, re-read that image with the VLM and keep its text for
+`flow_text` only, leaving `boxes_json` empty and letting §6.1's prose bypass handle the ordering.
+That rescues the one case PP-OCR loses while keeping boxes, speed and verbatim fidelity everywhere
+else.
+
+**Caveat, and it is load-bearing.** These runs used `--ocr-backend onnx-cpu` at fp32, because this
+environment has no cuDNN (`libcudnn.so` ships inside the torch wheel, and `[torch]` is not
+installed). Production is TensorRT fp16. Recognition accuracy is a property of the graph rather
+than the provider, and CPU fp32 if anything flatters PP-OCR, but **the prose detection hole must be
+reproduced on the TensorRT path before anything is built on it.** LFM likewise ran on CPU here
+because another workload held 3292 MB of the card; its text is device-independent, but the
+seconds-per-image column must not be read across devices.
+
 ## 18. Open questions
 
 1. What should the seed vocabulary actually contain? It needs ~100–200 terms to be useful at M4. Bootstrapping option: run JoyTag over the first 200 ingested images and promote its most frequent above-threshold tags as seed candidates for manual curation.
