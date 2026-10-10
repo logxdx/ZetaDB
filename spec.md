@@ -1509,6 +1509,7 @@ screenshots and measures nothing.
 |---|---|---|---|---|---|---|---|---|
 | **Qwen3.5-4B** UD-Q3_K_XL | 3747 | 3.47 | **29/29** | **1.00** | **0.1408** | **0.711** | 177 | 8.1 |
 | Qwen3-VL 4B UD-Q3_K_XL | 4457 | 3.30 | 29/29 | 0.97 | 0.1384 | 0.667 | 212 | 8.9 |
+| LFM2.5-VL 3B Q6 + Q8 mmproj | 3079 | 3.02 | 29/29 | 0.97 | 0.1351 | 0.555 | 148 | **10.0** |
 | Gemma 3 4B IT UD-Q3_K_XL | 3591 | 3.33 | 29/29 | 0.97 | 0.1217 | 0.622 | 216 | 6.9 |
 | InternVL3 2B Q4_K_M | **2033** | **1.92** | 25/29 | 0.96 | 0.1279 | 0.422 | 119 | 9.6 |
 | SmolVLM2 2.2B Q4_K_M | 3811 | 1.73 | 18/29 | 0.94 | 0.0840 | — | 52 | 5.3 |
@@ -1521,6 +1522,7 @@ reshuffle:
 | vs incumbent | n | incumbent better on | mean Δmargin | t |
 |---|---|---|---|---|
 | Qwen3-VL 4B | 29 | 17/29 | +0.0024 | **+0.73** |
+| LFM2.5-VL 3B | 29 | 16/29 | +0.0057 | **+1.18** |
 | Gemma 3 4B | 29 | 24/29 | +0.0191 | **+4.72** |
 | InternVL3 2B | 25 | 17/25 | +0.0150 | +2.48 |
 | SmolVLM2 2.2B | 18 | 15/18 | +0.0402 | +5.20 |
@@ -1560,7 +1562,29 @@ image correctly — but it is unreachable from pool B, which is HTTP + grammar b
 also trains at `n_ctx_train=2048` against our 16384, and the build warns `missing pre-tokenizer
 type ... GENERATION QUALITY WILL BE DEGRADED`.
 
-**InternVL3 2B is the one to remember.** It holds 1714 MB less VRAM than the incumbent and captions
+**LFM2.5-VL 3B is the real alternative, and the most interesting result here.** It was already
+built on this machine, so it cost nothing to try. It ties the incumbent on retrieval margin
+(t = 1.18 over 29 paired items, ahead on 13 of them) while holding **668 MB less VRAM**, loading in
+2.1 s against 9.6 s, captioning 13% faster, returning a complete object on all 29 images, and
+proposing more vocabulary tags than anything else measured. On a 6 GB card where §17.1 had to drop
+a whole escalation tier for want of room, 668 MB is not a rounding error. It needs `--jinja`:
+without it llama.cpp does not render LFM2.5-VL's chat template.
+
+Its weakness is specific and shows up in the captions, not just the metric. On the five text-dense
+items it describes the *structure* of an interface where the incumbent reads its *content* — the
+dashboard became "three rows of data, each containing a tag name, a numerical value, and a
+percentage" where the incumbent named PP-OCRv6_tiny, _small and _medium outright, and its invoice
+caption drops the issue date, due date, portal link and contact email that the incumbent keeps.
+Per-item OCR grounding over those five: incumbent 0.427, Qwen3-VL 0.400, Gemma 3 0.373, LFM2.5-VL
+0.333.
+
+That matters more than this corpus shows. 24 of these 29 images are photographs, which is what lets
+the margins tie; a real idea-dump skews to screenshots, which is the exact content LFM2.5-VL reads
+least well. **The incumbent therefore stays as the default, and LFM2.5-VL 3B becomes the first
+candidate if pool B ever has to shrink** — ahead of InternVL3 2B, which is lighter still but cannot
+be trusted to return an object at all on the text-dense items.
+
+**InternVL3 2B is the one to remember for size.** It holds 1714 MB less VRAM than the incumbent and captions
 in just over half the time, at a retrieval margin between Gemma's and Qwen's. What disqualifies it
 today is that 4 of 29 items produce no usable object, and they are the text-dense ones — the invoice
 is among them. It also transcribes rather than describes, reading a dashboard back as a list of

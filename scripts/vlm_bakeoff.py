@@ -80,6 +80,9 @@ class Candidate:
     extra: list[str] = field(default_factory=list)
     # Resolved for the incumbent, which lives outside the bake-off dir.
     subdir: str = BAKEOFF_DIR
+    # A model already on this machine, outside data/models entirely. Nothing
+    # to download and nothing to clean up afterwards.
+    abs_dir: str = ""
 
 
 CANDIDATES: list[Candidate] = [
@@ -100,6 +103,13 @@ CANDIDATES: list[Candidate] = [
     Candidate("qwen3vl_4b", "unsloth/Qwen3-VL-4B-Instruct-GGUF",
               "Qwen3-VL-4B-Instruct-UD-Q3_K_XL.gguf", "mmproj-F16.gguf",
               note="Qwen3-VL 4B, a vision SPECIALIST at the incumbent's quant"),
+    # Already built on this machine. --jinja is not optional here: the stock
+    # template detection does not render LFM2.5-VL's chat template, and the
+    # existing serve script for it passes --jinja for exactly that reason.
+    Candidate("lfm25_vl_3b", "", "text-q6.gguf", "mmproj-q8.gguf",
+              note="LFM2.5-VL 3B, Q6 text + Q8 mmproj, already on disk",
+              extra=["--jinja"],
+              abs_dir="~/llama.cpp/models/lfm25-vl-3b"),
     Candidate("internvl3_2b", "ggml-org/InternVL3-2B-Instruct-GGUF",
               "InternVL3-2B-Instruct-Q4_K_M.gguf",
               "mmproj-InternVL3-2B-Instruct-f16.gguf",
@@ -117,6 +127,8 @@ _STOP = {
 
 
 def model_dir(cfg, c: Candidate) -> Path:
+    if c.abs_dir:
+        return Path(c.abs_dir).expanduser()
     return cfg.path("paths.models") / (
         c.subdir if c.subdir != BAKEOFF_DIR else f"{BAKEOFF_DIR}/{c.key}")
 
