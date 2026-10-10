@@ -83,7 +83,13 @@
     transition: color 140ms var(--ease), background 140ms var(--ease);
   }
   .tabs button:hover { color: var(--text); }
-  .tabs .on { color: var(--text); background: var(--steel); }
+  /* The active chip fills with --border, NOT --steel. The light theme
+     redefines --text but leaves --steel at its dark #333336, so
+     `color: var(--text); background: var(--steel)` renders near-black on
+     dark grey - about 1.3:1 - the moment the theme flips. --border is
+     theme-resolved (#d2d2d7 light, #333336 dark) and pairs with --text at
+     roughly 12:1 in both. */
+  .tabs .on { color: var(--text); background: var(--border); }
   .spacer { flex: 1; }
   .hint {
     color: var(--muted); font-size: var(--fs-xs);

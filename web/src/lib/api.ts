@@ -13,6 +13,12 @@ export const whyLabel = (k: string) => WHY[k] ?? k;
 
 export type Tag = { term: string; confidence: number; source: "human" | "machine"; state: string };
 
+export type ReviewTag = {
+  item_id: number; term_id: number; term: string;
+  confidence: number; kind: "note" | "image"; title: string | null;
+};
+export type ReviewProposal = { id: number; term: string; created_at: number };
+
 export type Item = {
   id: number; kind: "note" | "image"; status: string;
   title: string | null; preview: string; caption: string | null;
@@ -66,4 +72,12 @@ export const api = {
   },
   remove: (id: number) => j(`/api/items/${id}`, { method: "DELETE" }),
   queue: () => j<{ depths: Record<string, number>; total: number }>("/api/queue"),
+  review: (limit = 200) =>
+    j<{ tags: ReviewTag[]; proposals: ReviewProposal[] }>(`/api/review?limit=${limit}`),
+  reviewTag: (itemId: number, termId: number, action: "accept" | "reject") =>
+    j<{ item_id: number; term_id: number; action: string }>(
+      `/api/review/tag/${itemId}/${termId}/${action}`, { method: "POST" }),
+  reviewProposal: (termId: number, action: "accept" | "reject") =>
+    j<{ term_id: number; state: string }>(
+      `/api/review/proposal/${termId}/${action}`, { method: "POST" }),
 };

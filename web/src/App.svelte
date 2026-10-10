@@ -5,9 +5,12 @@
   import RelatedBar from "./lib/components/RelatedBar.svelte";
   import Focus from "./lib/components/Focus.svelte";
   import Palette from "./lib/components/Palette.svelte";
+  import Review from "./lib/components/Review.svelte";
   import SortBar from "./lib/components/SortBar.svelte";
   import ThemeToggle from "./lib/components/ThemeToggle.svelte";
 
+  let reviewOpen = $state(false);
+  let pendingCount = $state(0);
   let paletteOpen = $state(false);
   let paletteMode = $state<"search" | "note">("search");
   let focusId = $state<number | null>(null);
@@ -39,6 +42,14 @@
   store.loadStream(true);
   $effect(() => connectEvents());
 
+  async function refreshPending() {
+    try {
+      const r = await api.review(200);
+      pendingCount = r.tags.length + r.proposals.length;
+    } catch { /* the badge is optional; never let it break the canvas */ }
+  }
+  refreshPending();
+
   function compose() { paletteMode = "note"; paletteOpen = true; }
 
   // Escape has ONE owner. It used to be handled in three places — on the
@@ -52,7 +63,8 @@
     const typing = /^(INPUT|TEXTAREA)$/.test(el?.tagName ?? "");
 
     if (e.key === "Escape") {
-      if (paletteOpen) paletteOpen = false;
+      if (reviewOpen) reviewOpen = false;
+      else if (paletteOpen) paletteOpen = false;
       else if (focusId !== null) focusId = null;
       else if (store.mode === "related") store.exitRelated();
       else if (typing) el?.blur();
@@ -61,7 +73,7 @@
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
       e.preventDefault(); paletteMode = "search"; paletteOpen = true; return;
     }
-    if (typing) return;
+    if (typing || reviewOpen) return;
     if (e.key === "/") { e.preventDefault(); paletteMode = "search"; paletteOpen = true; }
   }
 
@@ -106,6 +118,10 @@
       <span class="meta queue">{store.queueDepth} processing</span>
     {/if}
     {#if uploadNote}<span class="meta note">{uploadNote}</span>{/if}
+    {#if pendingCount > 0}
+      <button class="review-badge meta" type="button" onclick={() => (reviewOpen = true)}
+              title="review pending tags and vocabulary proposals">{pendingCount} pending</button>
+    {/if}
     {#if store.mode === "stream"}
       <SortBar value={store.sort} onchange={(s) => store.setSort(s)} />
     {/if}
@@ -163,6 +179,7 @@
 {#if focusId !== null}
   <Focus id={focusId} onclose={() => (focusId = null)} onopen={(id) => (focusId = id)} />
 {/if}
+<Review bind:open={reviewOpen} onreviewed={() => { refreshPending(); store.loadStream(true); }} />
 <Palette bind:open={paletteOpen} bind:mode={paletteMode} onsearch={runSearch}
          onupload={() => fileInput?.click()}
          oncreated={() => store.loadStream(true)} />
@@ -170,6 +187,18 @@
 {#if dragging}<div class="dropzone"><span>drop to ingest</span></div>{/if}
 
 <style>
+  /* Copper annotates newness and unreviewed work, never errors or primary
+     actions (DESIGN.md), which is exactly what a pending queue is. Through
+     --warn, which resolves per theme - the raw --copper is the white-surface
+     value and fails 4.5:1 on both dark grounds. */
+  .review-badge {
+    background: none; border: 1px solid var(--warn); color: var(--warn);
+    border-radius: var(--r-pill); padding: 4px 12px; cursor: pointer;
+    font-size: var(--fs-xs); letter-spacing: var(--ls-12); white-space: nowrap;
+    transition: background 140ms var(--ease);
+  }
+  .review-badge:hover { background: color-mix(in srgb, var(--warn) 14%, transparent); }
+
   /* The chrome floats on the canvas, but it is no longer a capsule with
      its own light: under this system an object is its fill plus a 1px
      keyline, and nothing casts a shadow. A contained Graphite bar at a
