@@ -1257,7 +1257,13 @@ iwashere/
   renderer exist; the shift-drag gesture does not.
 - **Review overlay** — the full review/merge API is implemented and tested by hand; the keyboard
   triage surface is not built.
-- **TensorRT** — unreachable on this machine (§5); the CUDA EP is fast enough for batch ingest.
+- ~~**TensorRT** — unreachable on this machine (§5); the CUDA EP is fast enough for batch
+  ingest.~~ **Wrong, corrected [M7c].** TensorRT runs here and is the default. Both
+  detection and recognition load on `TensorrtExecutionProvider` from the fp16 engines in
+  `data/models/trt`, at **0.16 s mean per image against 1.72 s on the CPU EP** — ~11x, which
+  is not "fast enough either way". What was missing was never TensorRT: it was `libcudnn.so`,
+  which ships inside a wheel, so a venv without `[torch]` fails at the first Conv node and
+  looks like a TensorRT problem.
 
 ### 17.1 The escalation tier — decision needed
 
@@ -1707,13 +1713,36 @@ implausibly low for an image's text density, re-read that image with the VLM and
 That rescues the one case PP-OCR loses while keeping boxes, speed and verbatim fidelity everywhere
 else.
 
-**Caveat, and it is load-bearing.** These runs used `--ocr-backend onnx-cpu` at fp32, because this
-environment has no cuDNN (`libcudnn.so` ships inside the torch wheel, and `[torch]` is not
-installed). Production is TensorRT fp16. Recognition accuracy is a property of the graph rather
-than the provider, and CPU fp32 if anything flatters PP-OCR, but **the prose detection hole must be
-reproduced on the TensorRT path before anything is built on it.** LFM likewise ran on CPU here
-because another workload held 3292 MB of the card; its text is device-independent, but the
-seconds-per-image column must not be read across devices.
+**[M7c] The caveat is discharged: re-run on TensorRT fp16, the hole is identical.** The first pass
+used `onnx-cpu` at fp32 for want of cuDNN, which left open whether the prose failure was an
+artefact of the provider. It is not. The project's own venv already carries TensorRT 10.16.1.11 for
+cu13 alongside cuDNN 9, and with `ocr.det_backend = rec_backend = "tensorrt"` both sessions load on
+`TensorrtExecutionProvider`:
+
+| case | onnx-cpu fp32 | **TensorRT fp16** |
+|---|---|---|
+| invoice | 0.005 | 0.005 |
+| metrics | 0.014 | 0.014 |
+| code | 0.237 | 0.237 |
+| **prose** | **0.908** | **0.908** |
+| ui_small | 0.327 | 0.327 |
+| item 1 | 0.009 | 0.009 |
+| item 4 | 0.006 | 0.011 |
+| mean | 0.215 | 0.216 |
+| critical tokens | 18/19 | 18/19 |
+
+Character-for-character the same everywhere but item 4, which moves by 0.005 — the only visible
+fp16-against-fp32 difference in the set, and in PP-OCR's favour on the metric that matters since
+both still return 7/7 critical tokens. **The prose hole is a property of the detector, not of the
+execution provider, so the §17.10 fallback is justified on the production path.**
+
+What fp16 does change is the clock: **0.16 s mean per image against 1.72 s**, roughly 11x, which
+also retires §17.2's claim that TensorRT is unreachable here and that the CUDA EP is fast enough
+either way.
+
+One remaining device caveat: LFM's numbers above were taken on CPU, because another workload held
+3292 MB of the card. Its *text* is device-independent, but the seconds-per-image column must not be
+read across devices.
 
 ## 18. Open questions
 
