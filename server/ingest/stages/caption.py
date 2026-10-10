@@ -1,8 +1,10 @@
 """Stage 4 - captioning. GPU pool B.
 
-Qwen3.5-4B (Unsloth UD-Q3_K_XL decoder + F16 mmproj) describes each image
-and, in the same call, emits the structured CaptionTags object under a GBNF
-grammar.
+The captioner named by `models.vlm_default` describes each image and, in the
+same call, emits the structured CaptionTags object under a GBNF grammar.
+That is LFM2.5-VL 3B since [M7]; nothing here is model-specific any more -
+the directory, globs, server flags, sampling and display name all come from
+config, because the bake-off in spec 17.9 made swapping it a config change.
 
 CaptionTags lives here rather than on Needle 3 because M0 measured Needle
 producing duplicated, near-useless tags on generative fields (spec 8.1).
@@ -26,6 +28,7 @@ from pathlib import Path
 from server.config import load
 from server.db.conn import reader
 from server.db.writer import writer
+from server.ingest.ocr_quality import underdetected
 from server.models.llama_server import LlamaServer, find_binary
 
 log = logging.getLogger(__name__)
@@ -59,22 +62,62 @@ ESCALATED_PROMPT = PROMPT + (
 )
 
 
+def _spec(cfg) -> dict:
+    return cfg.models.get("vlm_default", {}) or {}
+
+
+def model_dir(cfg) -> Path:
+    """Where the captioner's weights live.
+
+    `local_dir` is for a model already built on this machine, outside
+    data/models entirely - there is nothing to download and nothing to
+    clean up, so it should not be copied in just to satisfy a convention.
+    """
+    local = _spec(cfg).get("local_dir")
+    if local:
+        return Path(str(local)).expanduser()
+    return cfg.path("paths.models") / "vlm_default"
+
+
+def _sampling(cfg) -> dict:
+    """Publisher-recommended sampling, merged into every request."""
+    return dict(_spec(cfg).get("sampling") or {})
+
+
+def _thinking(cfg) -> bool | None:
+    """None omits enable_thinking, which only a hybrid reasoner declares."""
+    return False if _spec(cfg).get("hybrid_reasoner") else None
+
+
 def _server() -> LlamaServer | None:
     global _srv
     if _srv is not None:
         return _srv
     cfg = load()
-    d = cfg.path("paths.models") / "vlm_default"
+    spec = _spec(cfg)
+    d = model_dir(cfg)
     if not d.exists() or not find_binary():
         return None
-    model = next((p for p in sorted(d.glob("*.gguf")) if "mmproj" not in p.name.lower()), None)
-    mmproj = next((p for p in sorted(d.glob("*.gguf")) if "mmproj" in p.name.lower()), None)
+    fg, mg = spec.get("file_glob"), spec.get("mmproj_glob")
+    if fg:
+        model = next(iter(sorted(d.glob(fg))), None)
+    else:
+        model = next((p for p in sorted(d.glob("*.gguf"))
+                      if "mmproj" not in p.name.lower()), None)
+    if mg:
+        mmproj = next(iter(sorted(d.glob(mg))), None)
+    else:
+        mmproj = next((p for p in sorted(d.glob("*.gguf"))
+                       if "mmproj" in p.name.lower()), None)
     if model is None:
         return None
     _srv = LlamaServer(model, mmproj=mmproj,
-                       ctx=cfg.get("models.vlm_default.ctx", 16384), ngl=99,
-                       cache_type=cfg.get("models.vlm_default.cache_type"),
-                       flash_attn=cfg.get("models.vlm_default.flash_attn", False))
+                       ctx=spec.get("ctx", 16384), ngl=99,
+                       cache_type=spec.get("cache_type"),
+                       flash_attn=spec.get("flash_attn", False),
+                       # --jinja for LFM2.5-VL; without it llama.cpp does not
+                       # render its chat template at all.
+                       extra=list(spec.get("server_args") or []))
     return _srv
 
 
@@ -116,12 +159,39 @@ def _describe(srv: LlamaServer, path: Path, escalate: bool) -> dict | None:
         {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}},
         {"type": "text", "text": ESCALATED_PROMPT if escalate else PROMPT},
     ]}]
-    raw = srv.chat(msg, max_tokens=400, temperature=0.2, grammar=GRAMMAR)
+    raw = srv.chat(msg, max_tokens=400, temperature=0.2, grammar=GRAMMAR,
+                   thinking=_thinking(cfg), extra=_sampling(cfg))
     try:
         return json.loads(raw)
     except json.JSONDecodeError:
         log.warning("caption did not parse despite grammar: %.160s", raw)
         return None
+
+
+TRANSCRIBE_PROMPT = (
+    "Transcribe every piece of text in this image exactly as written, "
+    "line by line, in reading order. Preserve punctuation, capitalisation, "
+    "digits and symbols exactly. Output only the transcribed text, with no "
+    "commentary, no headings and no markdown."
+)
+
+
+def _transcribe(srv: LlamaServer, path: Path) -> str | None:
+    """Read a page the detector under-read (spec 17.10).
+
+    No grammar here: this is free text, and the grammar exists to shape a
+    CaptionTags object. Escalated resolution, because the whole reason this
+    fired is that the page is dense.
+    """
+    cfg = load()
+    b64, mime = _encode(path, cfg.get("vlm.escalate_image_long_edge", 1536))
+    msg = [{"role": "user", "content": [
+        {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}},
+        {"type": "text", "text": TRANSCRIBE_PROMPT},
+    ]}]
+    out = srv.chat(msg, max_tokens=1200, temperature=0.2,
+                   thinking=_thinking(cfg), extra=_sampling(cfg))
+    return (out or "").strip() or None
 
 
 def should_escalate(row: sqlite3.Row, cfg) -> bool:
@@ -165,7 +235,7 @@ def run(item_ids: list[int]) -> None:
         body = (got.get("caption") or "").strip()
         subj = (got.get("subject") or "").strip()
         caption = body if (not subj or subj.lower() in body.lower()) else f"{body} {subj}".strip()
-        out[r["id"]] = (caption, "qwen3.5-4b")
+        out[r["id"]] = (caption, _spec(cfg).get("name", "vlm"))
         tags = [t for t in (got.get("tags") or []) if isinstance(t, str)]
         if tags:
             proposals.append((r["id"], tags))
@@ -178,6 +248,47 @@ def run(item_ids: list[int]) -> None:
                 c.execute("UPDATE items SET caption = ?, caption_model = ?, updated_at = ? "
                           "WHERE id = ?", (cap, model, now, iid))
         writer.submit(work)
+
+    # spec 17.10: rescue the pages PP-OCR under-read. This lives here, not in
+    # stage 1, because the VLM is already resident in pool B - doing it at OCR
+    # time would mean loading a second model under a pool A lease. Stages 5-7
+    # (extract, embed, finalize) all run after this one, so a rewritten
+    # flow_text still reaches Needle, the item vector and FTS5.
+    if cfg.get("ocr.vlm_fallback", True):
+        rescued: dict[int, str] = {}
+        for r in rows:
+            path = root / r["blob_path"]
+            if not path.exists():
+                continue
+            boxes = json.loads(r["boxes_json"]) if r["boxes_json"] else []
+            fire, why = underdetected(
+                path, boxes,
+                min_lines=cfg.get("ocr.fallback_min_lines", 4),
+                ratio=cfg.get("ocr.fallback_ratio", 0.6))
+            if not fire:
+                continue
+            log.info("item %d: PP-OCR under-read (%s); re-reading with the VLM",
+                     r["id"], why)
+            try:
+                txt = _transcribe(srv, path)
+            except Exception:
+                log.exception("VLM re-read failed for item %d", r["id"])
+                continue
+            if txt:
+                rescued[r["id"]] = txt
+        if rescued:
+            def work2(c: sqlite3.Connection) -> None:
+                now = int(time.time())
+                for iid, txt in rescued.items():
+                    # Both renditions: the partial layout_text is built from
+                    # the same boxes that missed the page, so leaving it would
+                    # keep showing the fragments this just replaced. boxes_json
+                    # is NOT touched - it stays a true record of what the
+                    # detector actually found.
+                    c.execute("UPDATE items SET flow_text = ?, layout_text = ?, "
+                              "updated_at = ? WHERE id = ?", (txt, txt, now, iid))
+            writer.submit(work2)
+            log.info("VLM re-read rescued %d page(s)", len(rescued))
 
     # VLM-proposed tags go through the same vocabulary gate as anything else
     # (spec 7.5): near an existing term -> aliased, else queued for review.

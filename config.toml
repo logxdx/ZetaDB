@@ -137,23 +137,57 @@ max_text_tokens   = 8192
 server_bin = "llama-server-cuda"
 
 [models.vlm_default]
+# LFM2.5-VL 3B, already built on this machine. [M7] Measured against
+# Qwen3.5-4B over all 29 images in spec 17.9: a statistical TIE on the
+# metric that decides this - caption-as-query retrieval margin, t=0.49 over
+# 29 paired items, ahead on 15 of them - while holding 668 MB less VRAM
+# (3079 against 3747), loading in 2.1 s against 9.6 s and captioning 13%
+# faster. It also proposes more vocabulary tags, 10.0 per image against 8.1.
+#
+# It is weaker at reading an interface INTO a caption (OCR grounding 0.555
+# against 0.711), but spec 1.1 gives that job to PP-OCRv6 and 17.10 confirms
+# PP-OCR keeps it: 18/19 critical tokens verbatim against the VLM's 15/19.
+# The caption describes; the OCR engine transcribes.
+#
+# local_dir, because these weights live outside data/models and there is
+# nothing to download. server_args is not optional: without --jinja
+# llama.cpp does not render LFM2.5-VL's chat template.
+role         = "captioner"
+repo         = "LiquidAI/LFM2.5-VL-3B-GGUF"
+backend      = "llama.cpp"
+local_dir    = "~/llama.cpp/models/lfm25-vl-3b"
+file_glob    = "text-q6.gguf"
+mmproj_glob  = "mmproj-q8.gguf"
+server_args  = ["--jinja"]
+name         = "lfm2.5-vl-3b"
+pool         = "B"
+ctx          = 16384
+cache_type   = "q8_0"
+flash_attn   = true
+# Not a hybrid reasoner, so enable_thinking must NOT be sent - its template
+# does not declare it. Qwen3.5 set this true.
+hybrid_reasoner = false
+# Liquid's documented llama.cpp sampling: --temp 0.2 --top-k 50
+# --repeat-penalty 1.0. [M7b] worth ~15% speed and no accuracy change.
+[models.vlm_default.sampling]
+top_k          = 50
+repeat_penalty = 1.0
+
+# The predecessor, kept because its weights are still in data/models and the
+# bake-off is reproducible against it. Set as vlm_default to switch back.
+[models.vlm_qwen35]
 role         = "captioner"
 repo         = "unsloth/Qwen3.5-4B-GGUF"
 backend      = "llama.cpp"
 file_glob    = "Qwen3.5-4B-UD-Q3_K_XL.gguf"
 mmproj_glob  = "mmproj-F16.gguf"
+name         = "qwen3.5-4b"
 pool         = "B"
 ctx          = 16384
-# KV cache quantised to q8_0, WITH flash attention. Measured at 16k ctx:
-#   q8_0, no FA -> 3663 MB, 31.7 s/caption   (dequant on every attention op)
-#   f16,  no FA -> 3190 MB,  4.2 s
-#   f16,  +FA   -> 3851 MB,  3.7 s
-#   q8_0, +FA   -> 3661 MB,  3.5 s   <- chosen
-# Quantising the KV cache without flash attention is 7.5x SLOWER, not
-# cheaper. The mmproj stays F16: it is the smallest form Unsloth publishes
-# and quantising a vision projector below Q8 degrades image grounding.
 cache_type   = "q8_0"
 flash_attn   = true
+hybrid_reasoner = true
+enabled      = false
 
 [models.needle]
 role    = "structured-extraction"
@@ -185,6 +219,15 @@ trt_opt_level  = 3           # TurboOCR: level 3 cuts build time 3-5x
 # sequence encoder, not just the output layer. OCR text is what search,
 # layout and entity extraction are all built on, so 9 MB is not worth it.
 # The INT8 graphs are still built and kept; these switch them on.
+# [M7c] spec 17.10: PP-OCR detection drops roughly half the lines of a
+# flowing prose paragraph (4-5 of 8, CER 0.908) while reading a
+# discrete-field invoice perfectly. When the pixels show far more text lines
+# than detection returned, the caption stage re-reads that image with the
+# VLM, which measured CER 0.028 on exactly that shape. Gated on page-likeness
+# so a photograph's texture cannot trigger it - see ocr_quality.py.
+vlm_fallback       = true
+fallback_min_lines = 4
+fallback_ratio     = 0.6
 rec_quantised  = false
 det_quantised  = false
 backend        = "auto"      # fallback for anything not named above

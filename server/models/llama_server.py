@@ -216,16 +216,21 @@ class LlamaServer:
 
     def chat(self, messages: list[dict], *, max_tokens: int = 512,
              temperature: float = 0.2, grammar: str | None = None,
-             thinking: bool = False) -> str:
+             thinking: bool | None = False, extra: dict | None = None) -> str:
         self.start()
         payload: dict = {"messages": messages, "max_tokens": max_tokens,
-                         "temperature": temperature, "stream": False,
-                         # Qwen3.5 is a hybrid reasoner: left on, it spends the
-                         # entire budget on reasoning_content and returns an
-                         # empty content field.
-                         "chat_template_kwargs": {"enable_thinking": thinking}}
+                         "temperature": temperature, "stream": False}
+        # Only a hybrid reasoner declares enable_thinking. Qwen3.5 needs it
+        # off or it spends the whole budget on reasoning_content and returns
+        # an empty content field; a model whose template does not declare it
+        # must not be sent it at all, so None means "omit".
+        if thinking is not None:
+            payload["chat_template_kwargs"] = {"enable_thinking": thinking}
         if grammar:
             payload["grammar"] = grammar
+        # Publisher-recommended sampling, e.g. LFM2.5-VL's top_k / repeat_penalty.
+        if extra:
+            payload.update(extra)
         r = self._client.post("/v1/chat/completions", json=payload)
         if r.status_code >= 400:
             # The body carries llama.cpp's actual complaint; raise_for_status
