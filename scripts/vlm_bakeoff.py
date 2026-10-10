@@ -83,6 +83,9 @@ class Candidate:
     # A model already on this machine, outside data/models entirely. Nothing
     # to download and nothing to clean up afterwards.
     abs_dir: str = ""
+    # Publisher-recommended sampling, merged into the request. The defaults
+    # are llama.cpp's, which are not always what a model card asks for.
+    sampling: dict = field(default_factory=dict)
 
 
 CANDIDATES: list[Candidate] = [
@@ -109,6 +112,15 @@ CANDIDATES: list[Candidate] = [
     Candidate("lfm25_vl_3b", "", "text-q6.gguf", "mmproj-q8.gguf",
               note="LFM2.5-VL 3B, Q6 text + Q8 mmproj, already on disk",
               extra=["--jinja"],
+              abs_dir="~/llama.cpp/models/lfm25-vl-3b"),
+    # The same weights under Liquid's documented settings. [M7] The default
+    # image budget is 256 tokens for a 1024px screenshot; --image-max-tokens
+    # 1024 lifts it to ~512, which is the ceiling this image's own tiling
+    # allows - asking for 2048 produces an identical 531-token prompt.
+    Candidate("lfm25_vl_tuned", "", "text-q6.gguf", "mmproj-q8.gguf",
+              note="LFM2.5-VL 3B at Liquid's documented sampling + 2x image tokens",
+              extra=["--jinja", "--image-max-tokens", "1024"],
+              sampling={"top_k": 50, "repeat_penalty": 1.0},
               abs_dir="~/llama.cpp/models/lfm25-vl-3b"),
     Candidate("internvl3_2b", "ggml-org/InternVL3-2B-Instruct-GGUF",
               "InternVL3-2B-Instruct-Q4_K_M.gguf",
@@ -258,7 +270,7 @@ def _chat(srv: LlamaServer, messages: list[dict], c: Candidate,
         return srv.chat(messages, max_tokens=max_tokens, temperature=0.2,
                         grammar=C.GRAMMAR)
     payload = {"messages": messages, "max_tokens": max_tokens, "temperature": 0.2,
-               "stream": False, "grammar": C.GRAMMAR}
+               "stream": False, "grammar": C.GRAMMAR, **c.sampling}
     r = srv._client.post("/v1/chat/completions", json=payload)
     if r.status_code >= 400:
         raise RuntimeError(f"llama-server {r.status_code}: {r.text[:300]}")
@@ -392,7 +404,11 @@ def main() -> int:
     recs = []
     for key in keys:
         c = BY_KEY[key]
-        suffix = "-nopreamble" if a.no_preamble else ""
+        # Every experimental condition gets its own file. Without this an
+        # --escalate run silently overwrites the default-condition captions
+        # and the saved record no longer matches the table it produced.
+        suffix = ("-escalate" if a.escalate else "") + \
+                 ("-nopreamble" if a.no_preamble else "")
         f = out_dir / f"{key}{suffix}.json"
         if a.score_only:
             if not f.exists():

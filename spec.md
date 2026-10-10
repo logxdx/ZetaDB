@@ -1591,6 +1591,56 @@ is among them. It also transcribes rather than describes, reading a dashboard ba
 bare numbers, which duplicates work PP-OCRv6 already does better (§1.1). If pool B ever has to
 shrink to let pool A coexist, this is the first candidate to re-measure.
 
+**[M7b] LFM2.5-VL re-measured against its own documentation.** Liquid's docs claim detection and
+grounding, screen and document understanding, OCR and function calling, which sits badly against the
+0.555 OCR grounding measured above. Checked directly, and the claim is right: asked
+*"Read every line of text in this interface verbatim"*, LFM reads the dashboard back as
+`PP-OCR6b_tiny 1.5M 806 735 / PP-OCR6b_small 7.7M 841 81.3 / PP-OCR6b_medium 345M 86.2 83.2` —
+near-perfect, off only by the digit grouping. **The model can read screens. It just does not do it
+inside a captioning instruction**, where it reports an interface's *structure* ("three entries, each
+showing a tag name, a numerical value, and two highlighted percentages") instead of its *content*.
+That is instruction-following under a multi-field grammar, not a vision limit.
+
+Three levers were tried against it, and none moved it far:
+
+| condition | json | margin | ocr | s/cap |
+|---|---|---|---|---|
+| default (llama.cpp sampling, 256 image tokens) | 29/29 | 0.1351 | 0.555 | 3.02 |
+| Liquid's documented sampling + `--image-max-tokens 1024` | 29/29 | 0.1315 | 0.489 | 2.56 |
+| the same, on the §4.3 escalated path (1536 px, stricter prompt) | 29/29 | 0.1319 | 0.555 | 3.09 |
+
+`--image-max-tokens` is worth knowing about: this build gives an image **256 tokens by default** and
+`1024` lifts it to ~512, but `2048` produces an identical 531-token prompt — 512 is the ceiling the
+image's own tiling allows, so the knob saturates immediately. Liquid's recommended sampling
+(`--top-k 50 --repeat-penalty 1.0`) made it ~15% faster and no more accurate. The escalated prompt,
+which explicitly says *"read the interface carefully"*, lifts the **incumbent** to 0.889 OCR
+grounding and leaves LFM at 0.555: told plainly to read the screen, Qwen does and LFM still
+describes.
+
+**`ocr_recall` is the wrong stick to beat this model with, and §1.1 says so.** PP-OCRv6 is the OCR
+authority and the VLM never does OCR — the text is already in `flow_text`, already in FTS5, and
+already interleaved into the `kind='item'` vector. A caption that re-transcribes it is duplicating
+a job the design gave to a better model. On the metric that actually decides this, LFM2.5-VL is
+**indistinguishable from the incumbent**: re-baselined, it is ahead on 15 of 29 items, t = 0.49.
+
+| vs a fresh incumbent baseline | n | incumbent better on | mean Δmargin | t |
+|---|---|---|---|---|
+| LFM2.5-VL 3B (default) | 29 | 14/29 | +0.0024 | **+0.49** |
+| LFM2.5-VL 3B (tuned) | 29 | 15/29 | +0.0059 | +1.13 |
+| Qwen3-VL 4B | 29 | 15/29 | −0.0009 | **−0.28** |
+| Gemma 3 4B | 29 | 20/29 | +0.0157 | +3.27 |
+
+**Re-running the incumbent against itself is the control this needed.** Its own margin moved
+0.1408 → 0.1374 between two identical runs at temperature 0.2 — ±0.003, the same size as every gap
+being argued over except Gemma's. Gemma 3 4B is the only candidate that stays significantly behind
+across both baselines (t = 4.72 then 3.27); every "tie" above is a genuine tie, and the single-run
+margins in the first table should not be read to three decimal places.
+
+**What LFM2.5-VL would actually buy is capability this project does not use yet.** Detection and
+grounding (RefCOCO 87.9), ScreenSpot-v2 at 78–82, and function calling are not captioning upgrades —
+they are new surfaces. If iwashere ever wants "point at the chart in this screenshot" or a
+tool-calling path, that is the reason to load it, not a better caption.
+
 **Not tested, and why.** Gemma 4 E4B is the obvious "newer Gemma" candidate and does **not** fit:
 UD-Q3_K_XL is 4588 MB and its mmproj another 990 MB, so 5578 MB of weights alone against a 5400 MB
 budget, before any KV cache — the same arithmetic that killed Gemma 4 12B in §17.1. "E4B" is
