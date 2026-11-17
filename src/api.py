@@ -276,7 +276,8 @@ def frontend(full_path: str):
         return FileResponse(candidate)
     index = WEB_DIR / "index.html"
     if index.is_file():
-        return FileResponse(index)
+        # The HTML shell must revalidate so new (content-hashed) bundles are picked up
+        return FileResponse(index, headers={"Cache-Control": "no-cache"})
     return HTMLResponse(
         "<h1>Zeta DB</h1><p>The frontend has not been built yet. Run "
         "<code>cd frontend &amp;&amp; npm install &amp;&amp; npm run build</code>.</p>",

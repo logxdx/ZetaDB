@@ -63,7 +63,13 @@ export const Tile = memo(function Tile({
         <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-black/55 to-transparent opacity-0 transition-opacity duration-300 group-hover/tile:opacity-100" />
       )}
       {item.modality !== "text" && item.modality !== "audio" && (
-        <p className="pointer-events-none absolute inset-x-2.5 bottom-2 translate-y-1 truncate text-xs font-medium text-white opacity-0 drop-shadow transition-all duration-300 group-hover/tile:translate-y-0 group-hover/tile:opacity-100">
+        <p
+          className={cn(
+            "pointer-events-none absolute right-2.5 bottom-2 translate-y-1 truncate text-xs font-medium text-white opacity-0 drop-shadow transition-all duration-300 group-hover/tile:translate-y-0 group-hover/tile:opacity-100",
+            // leave room for the "matched at" badge
+            showScore && matchStart(item.match) > 0 ? "left-[4.5rem]" : "left-2.5",
+          )}
+        >
           {prettyName(item.name)}
         </p>
       )}

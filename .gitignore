@@ -6,6 +6,9 @@ data
 images
 __pycache__
 
+# README / docs images are tracked
+!docs/assets/*
+
 # Frontend
 frontend/node_modules
 frontend/dist
