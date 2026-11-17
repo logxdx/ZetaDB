@@ -2,6 +2,6 @@ from .config import *
 
 from .utils import normalize_vectors
 
-from .embedding import CLIPEmbedder
+from .embedding import GemmaEmbedder
 
 from .index import LanceDBIndex, VectorObject

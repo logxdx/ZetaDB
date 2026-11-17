@@ -1,8 +1,18 @@
-einops
-timm
-transformers
+# Embeddings — EmbeddingGemma 2 (multimodal features need sentence-transformers >= 6.1)
+sentence-transformers[image,audio,video]>=6.1.0
+transformers>=5.0
 torch
+torchcodec  # audio/video decoding (install the build matching your torch / CUDA)
+soundfile
 pillow
 numpy
-lancedb
-pydantic
+
+# Vector store
+lancedb>=0.20
+pyarrow
+pydantic>=2
+
+# Web app
+fastapi
+uvicorn[standard]
+python-multipart

@@ -1,210 +1,106 @@
-import gradio as gr
+"""
+Zeta DB — multimodal vector search for text, images, audio and video.
+
+Usage:
+    python zeta.py                                  # start the web app (default)
+    python zeta.py serve --port 7860
+    python zeta.py index ~/Pictures -c photos       # index a folder from the CLI
+    python zeta.py search "a dog on a beach" -c photos
+    python zeta.py search --file clip.mp3 -c music --only audio
+"""
+
+import argparse
 import logging
-import os
-import uuid
+import sys
 from pathlib import Path
-from typing import List, Union
 
-from src.config import SUPPORTED_IMAGE_EXTENSIONS, DEFAULT_SEARCH_K
-from src.embedding import CLIPEmbedder
-from src.index import LanceDBIndex, VectorObject
-
-# Setup logging
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+from src.config import (
+    DEFAULT_QUERY_INTENT,
+    DEFAULT_SEARCH_K,
+    DEFAULT_TABLE,
+    HOST,
+    MODALITIES,
+    PORT,
+    QUERY_PROMPTS,
 )
-logger = logging.getLogger(__name__)
 
-# --- Global Components ---
-try:
-    embedder = CLIPEmbedder()
-    indexer = LanceDBIndex()
-    logger.info("Successfully initialized embedder and indexer.")
-except Exception as e:
-    logger.error(f"Fatal error during initialization: {e}", exc_info=True)
-    # Gracefully exit if core components fail
-    embedder = None
-    indexer = None
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 
-def index_folder(table_name: str, folder_path: str) -> str:
-    """
-    Scans a folder for supported images, generates embeddings, and adds them to the index.
+def cmd_serve(args):
+    import uvicorn
 
-    Args:
-        folder_path: The absolute path to the folder to index.
-
-    Returns:
-        A status message indicating the result of the indexing operation.
-    """
-    if not embedder or not indexer:
-        return "Error: Core components not initialized. Please check logs."
-    if not folder_path or not os.path.isdir(folder_path):
-        logger.warning(f"Invalid folder path provided: {folder_path}")
-        return "Error: Please provide a valid folder path."
-
-    logger.info(f"Starting to index folder: {folder_path}")
-    logger.info(f"Using Table: {table_name}")
-
-    path_obj = Path(folder_path)
-    image_paths = [
-        p for p in path_obj.rglob("*") if p.suffix.lower() in SUPPORTED_IMAGE_EXTENSIONS
-    ]
-
-    if not image_paths:
-        logger.info("No supported image files found in the folder.")
-        return "No new images to index."
-
-    docs_to_add = []
-    for image_path in image_paths:
-        try:
-            embedding = embedder.embed_image(str(image_path))
-            if embedding is not None:
-
-                doc_id = str(uuid.uuid4())
-                item = VectorObject(
-                    id=doc_id,
-                    vector=embedding.tolist(),
-                    type="image",
-                    path=str(image_path),
-                ).model_dump(mode="json")
-                docs_to_add.append(item)
-
-        except Exception as e:
-            logger.error(
-                f"Failed to process and embed image {image_path}: {e}", exc_info=True
-            )
-
-    if not docs_to_add:
-        return "Could not process any images for indexing."
-
-    try:
-        indexer.insert_documents(docs_to_add, table_name=table_name)
-        status_message = (
-            f"Successfully indexed {len(docs_to_add)} images from {folder_path}."
-        )
-        logger.info(status_message)
-        return status_message
-    except Exception as e:
-        logger.error(f"Failed to insert documents into index: {e}", exc_info=True)
-        return "Error: Failed to save new index entries."
+    print(f"\n  Zeta DB is running at http://{args.host}:{args.port}\n")
+    uvicorn.run("src.api:app", host=args.host, port=args.port, log_level="info")
 
 
-def search_index(
-    query: Union[str, Path],
-    top_k: int = DEFAULT_SEARCH_K,
-    table_name: str = "embeddings",
-) -> List[tuple[str, str]]:
-    """
-    Searches the index using a text query or an image file.
+def cmd_index(args):
+    from src.engine import Engine
 
-    Args:
-        query: The text string or image path for the search.
-        top_k: The number of top results to retrieve.
-
-    Returns:
-        A list of tuples, where each tuple contains the file path and a score/distance.
-    """
-    if not embedder or not indexer:
-        logger.error("Search cannot proceed: core components not initialized.")
-        return []
-
-    embedding = None
-    if isinstance(query, str) and os.path.isfile(query):
-        logger.info(f"Performing image search for: {query}")
-        embedding = embedder.embed_image(query)
-    elif isinstance(query, str):
-        logger.info(f"Performing text search for: '{query}'")
-        embedding = embedder.embed_text(query)
-
-    if embedding is None:
-        logger.warning("Could not generate an embedding for the query.")
-        return []
-
-    try:
-        results = indexer.search(
-            query_vector=embedding.tolist(), top_k=top_k, table_name=table_name
-        )
-        # The result object from to_pydantic is a list of VectorObject models
-        processed_results = [res["path"] for res in results]
-        logger.info(f"Search found {len(processed_results)} results.")
-        return processed_results
-    except Exception as e:
-        logger.error(f"An error occurred during search: {e}", exc_info=True)
-        return []
+    engine = Engine()
+    engine.load_model()
+    job = engine.wait(engine.index_folder(args.collection, args.folder))
+    print(
+        f"{job.status}: {job.indexed} indexed, {job.skipped} already present, "
+        f"{job.failed} failed (of {job.total})"
+    )
+    for err in job.errors:
+        print(f"  ! {err}")
+    return 0 if job.status == "completed" else 1
 
 
-def create_gradio_interface():
-    """
-    Creates and launches the Gradio web interface for the search application.
-    """
-    with gr.Blocks(theme=gr.themes.Soft(), title="Zeta DB Visual Search") as interface:
-        gr.Markdown("<h1>Zeta DB: Visual & Text Search</h1>")
+def cmd_search(args):
+    from src.engine import Engine
 
-        with gr.Tab("Search"):
-            with gr.Row():
-                with gr.Column(scale=3):
-                    results_gallery = gr.Gallery(
-                        label="Search Results", show_label=True, elem_id="gallery"
-                    )
+    engine = Engine()
+    engine.load_model()
+    results = engine.search(
+        args.collection,
+        args.top_k,
+        modalities=args.only,
+        text=args.query,
+        file_path=Path(args.file) if args.file else None,
+        intent=args.intent,
+    )
+    for i, r in enumerate(results, 1):
+        print(f"{i:>3}. {r['score']:.3f}  [{r['modality']:<5}]  {r['path']}")
+    return 0
 
-                with gr.Column(scale=2):
-                    text_query = gr.Textbox(
-                        label="Text Query",
-                        placeholder="e.g., 'a red car on a sunny day'",
-                    )
-                    image_query = gr.Image(type="filepath", label="Image Query")
-                    table_name = gr.Dropdown(
-                        choices=indexer.get_tables(),
-                        label="Table Name",
-                    )
-                    top_k_slider = gr.Slider(
-                        minimum=1,
-                        maximum=50,
-                        value=DEFAULT_SEARCH_K,
-                        step=1,
-                        label="Number of Results (Top-K)",
-                    )
-                    search_button = gr.Button("Search", variant="primary")
 
-            # Handlers for search actions
-            text_query.submit(
-                fn=search_index,
-                inputs=[text_query, top_k_slider, table_name],
-                outputs=results_gallery,
-            )
-            search_button.click(
-                fn=search_index,
-                inputs=[text_query, top_k_slider, table_name],
-                outputs=results_gallery,
-            )
-            image_query.upload(
-                fn=search_index,
-                inputs=[image_query, top_k_slider, table_name],
-                outputs=results_gallery,
-            )
+def main(argv=None):
+    parser = argparse.ArgumentParser(description="Zeta DB — multimodal vector search")
+    sub = parser.add_subparsers(dest="command")
 
-        with gr.Tab("Index Management"):
-            with gr.Row():
-                table_name = gr.Textbox(label="Table Name")
-                folder_input = gr.Textbox(
-                    label="Folder Path",
-                    placeholder="Enter the full path to your image folder",
-                )
-                index_button = gr.Button("Index Folder", variant="primary")
-            index_status = gr.Label(label="Indexing Status")
-            index_button.click(
-                fn=index_folder, inputs=[table_name, folder_input], outputs=index_status
-            )
+    p_serve = sub.add_parser("serve", help="start the web app")
+    p_serve.add_argument("--host", default=HOST)
+    p_serve.add_argument("--port", type=int, default=PORT)
+    p_serve.set_defaults(func=cmd_serve)
 
-    logger.info("Launching Gradio interface...")
-    interface.launch()
+    p_index = sub.add_parser("index", help="index a folder of text, images, audio and video")
+    p_index.add_argument("folder")
+    p_index.add_argument("-c", "--collection", default=DEFAULT_TABLE)
+    p_index.set_defaults(func=cmd_index)
+
+    p_search = sub.add_parser("search", help="search a collection")
+    p_search.add_argument("query", nargs="?", help="text query")
+    p_search.add_argument("-f", "--file", help="query by example (image, audio, video or text file)")
+    p_search.add_argument("-c", "--collection", default=DEFAULT_TABLE)
+    p_search.add_argument("-k", "--top-k", type=int, default=DEFAULT_SEARCH_K)
+    p_search.add_argument("--only", nargs="+", choices=MODALITIES, help="restrict result modalities")
+    p_search.add_argument(
+        "-i",
+        "--intent",
+        default=DEFAULT_QUERY_INTENT,
+        choices=list(QUERY_PROMPTS),
+        help="task prompt for the text query: search (default), question, code, fact, similarity",
+    )
+    p_search.set_defaults(func=cmd_search)
+
+    args = parser.parse_args(argv)
+    if args.command is None:
+        args = parser.parse_args(["serve", *(argv or [])])
+    return args.func(args) or 0
 
 
 if __name__ == "__main__":
-    if embedder and indexer:
-        create_gradio_interface()
-    else:
-        logger.critical(
-            "Application cannot start because core components failed to initialize."
-        )
+    sys.exit(main())

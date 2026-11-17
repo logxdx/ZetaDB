@@ -35,3 +35,45 @@ def normalize_vectors(vector: np.ndarray) -> np.ndarray:
             return vector / norms
     except Exception as e:
         raise ValueError(f"Error normalizing vector: {e}") from e
+
+
+def probe_media(path, modality: str) -> dict:
+    """
+    Best-effort media metadata used by the UI for layout and badges.
+
+    Returns a dict with ``width``, ``height`` (pixels) and ``duration`` (seconds);
+    missing values are 0.
+    """
+    info = {"width": 0, "height": 0, "duration": 0.0}
+    try:
+        if modality == "image":
+            from PIL import Image
+
+            with Image.open(path) as img:
+                width, height = img.size
+                # EXIF orientations 5-8 are rotated by 90° when displayed
+                if img.getexif().get(0x0112, 1) in (5, 6, 7, 8):
+                    width, height = height, width
+            info.update(width=width, height=height)
+        elif modality == "video":
+            from torchcodec.decoders import VideoDecoder
+
+            meta = VideoDecoder(str(path)).metadata
+            info.update(
+                width=int(meta.width or 0),
+                height=int(meta.height or 0),
+                duration=float(meta.duration_seconds or 0.0),
+            )
+        elif modality == "audio":
+            try:
+                import soundfile
+
+                info.update(duration=float(soundfile.info(str(path)).duration))
+            except Exception:  # formats libsndfile can't read (e.g. m4a / aac)
+                from torchcodec.decoders import AudioDecoder
+
+                meta = AudioDecoder(str(path)).metadata
+                info.update(duration=float(meta.duration_seconds or 0.0))
+    except Exception as e:  # metadata is optional, never fail indexing because of it
+        logger.debug(f"Could not probe {path}: {e}")
+    return info

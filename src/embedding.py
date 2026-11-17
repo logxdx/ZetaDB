@@ -1,124 +1,178 @@
-from transformers import AutoModel
-from PIL import Image, UnidentifiedImageError
-import numpy as np
-import logging
+"""
+Multimodal embeddings with EmbeddingGemma 2.
 
-# Import configuration and utility functions
-from .config import CLIP_MODEL_NAME, DEVICE, EMBEDDING_DIMENSION
+Text, code, images, audio and video are projected into one shared vector
+space, so any modality can be used to search any other. Prompts follow the
+EmbeddingGemma 2 developer guide: task prompts for text *queries*, the
+"Document" format (``title: … | text: …``) for indexed text, and no prompt for
+media.
+"""
+
+import logging
+import threading
+from collections import OrderedDict
+from pathlib import Path
+from typing import Any, List, Union
+
+import numpy as np
+import torch
+
+from .config import (
+    DEFAULT_QUERY_INTENT,
+    DEVICE,
+    EMBEDDING_DIMENSION,
+    EMBEDDING_MODEL_NAME,
+    ENABLED_MODALITIES,
+    QUERY_CACHE_SIZE,
+    QUERY_PROMPTS,
+    VIDEO_FRAMES_PER_WINDOW,
+)
+from .segments import prepare_file
 from .utils import normalize_vectors
 
-# Setup logging
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
-)
 logger = logging.getLogger(__name__)
 
+NATIVE_DIMENSION = 768
 
-class CLIPEmbedder:
-    """Handles loading the CLIP model and generating embeddings."""
+# Pre-decoded frame lists carry no fps metadata, so sample by count only
+FRAME_LIST_PROCESSING = {"video": {"fps": None, "max_frames": VIDEO_FRAMES_PER_WINDOW}}
+
+
+class GemmaEmbedder:
+    """Loads EmbeddingGemma 2 and embeds queries and segments of every modality."""
 
     def __init__(
         self,
-        model_name: str = CLIP_MODEL_NAME,
+        model_name: str = EMBEDDING_MODEL_NAME,
         device: str = DEVICE,
         embedding_dim: int = EMBEDDING_DIMENSION,
     ):
-        """
-        Initializes the CLIP model and processor.
+        # Imported lazily so that importing the package stays cheap
+        from sentence_transformers import SentenceTransformer
 
-        Args:
-            model_name: The name of the CLIP model to use.
-            device: The device to run the model on (e.g., 'cuda' or 'cpu').
-            embedding_dim: The dimension of the embeddings to be generated (64 to 1024).
-        """
-        self.device = device
         self.model_name = model_name
+        self.device = device
         self.embedding_dim = embedding_dim
+        # The model is not guaranteed to be thread-safe; serialise access to it
+        self._lock = threading.Lock()
+        self._query_cache: "OrderedDict[tuple, np.ndarray]" = OrderedDict()
+
+        # float16 is not supported (NaNs / degraded vectors): bf16 on capable GPUs, else fp32
+        if device.startswith("cuda") and torch.cuda.is_bf16_supported():
+            dtype = torch.bfloat16
+        else:
+            dtype = torch.float32
+
+        # Modular loading: skip encoders for modalities that are switched off.
+        # Every configuration shares the same vector space.
+        config_kwargs = {}
+        if not {"image", "video"} & set(ENABLED_MODALITIES):
+            config_kwargs["vision_config"] = None
+        if "audio" not in ENABLED_MODALITIES:
+            config_kwargs["audio_config"] = None
+
         logger.info(
-            f"Initializing CLIPEmbedder with model: {self.model_name} on device: {self.device}"
+            f"Loading {model_name} on {device} ({dtype}); modalities: {', '.join(ENABLED_MODALITIES)} ..."
         )
-        try:
-            self.model = AutoModel.from_pretrained(
-                self.model_name, trust_remote_code=True
-            ).to(self.device)
-            logger.info("CLIP model loaded successfully.")
-            # Get embedding dimension dynamically
-        except Exception as e:
-            logger.error(
-                f"Failed to load CLIP model '{self.model_name}': {e}", exc_info=True
+        self.model = SentenceTransformer(
+            model_name,
+            device=device,
+            model_kwargs={"dtype": dtype},
+            config_kwargs=config_kwargs or None,
+            truncate_dim=None if embedding_dim == NATIVE_DIMENSION else embedding_dim,
+        )
+        logger.info("Embedding model loaded.")
+
+    # ------------------------------------------------------------------ core
+    def _encode_many(self, inputs: List[Any], **kwargs) -> np.ndarray:
+        with self._lock, torch.inference_mode():
+            out = self.model.encode(
+                inputs,
+                batch_size=len(inputs),
+                convert_to_numpy=True,
+                normalize_embeddings=True,
+                show_progress_bar=False,
+                **kwargs,
             )
-            raise
+        # Re-normalise in float32 (removes bf16 drift; required after Matryoshka truncation)
+        return normalize_vectors(np.asarray(out, dtype=np.float32).reshape(len(inputs), -1))
 
-    def embed_image(
-        self, image_path: str, normalize: bool = False
-    ) -> np.ndarray | None:
+    # --------------------------------------------------------------- queries
+    def embed_query(self, text: str, intent: str = DEFAULT_QUERY_INTENT) -> np.ndarray:
         """
-        Generates an embedding for a given image file.
-
-        Args:
-            image_path: Path to the image file.
-
-        Returns:
-            A numpy array representing the image embedding, or None if an error occurs.
+        Embed a text query with the task prompt for ``intent``:
+        search (default, also used for cross-modal search), question, code, fact, similarity.
+        Results are cached, so retyping or paging a query costs nothing.
         """
-        if not image_path:
-            logger.warning("Attempted to embed image from an empty path.")
-            return None
-        logger.debug(f"Attempting to embed image: {image_path}")
-        try:
-            img = Image.open(image_path)
-            image = img.convert("RGB")  # Ensure image is RGB
-            image_embeddings = self.model.encode_image(
-                image, truncate_dim=self.embedding_dim
-            )
-            if normalize:
-                image_embeddings = normalize_vectors(image_embeddings)
-            # Ensure the output is consistently 1D for single images after potential normalization
-            logger.info(f"Successfully embedded image: {image_path}")
-            return (
-                image_embeddings.squeeze()
-                if image_embeddings.ndim > 1
-                else image_embeddings
-            )
-        except FileNotFoundError:
-            logger.error(f"Image file not found: {image_path}")
-            return None
-        except UnidentifiedImageError:
-            logger.error(
-                f"Cannot identify image file (possibly corrupt or unsupported format): {image_path}"
-            )
-            return None
-        except Exception as e:
-            logger.error(f"Failed to embed image '{image_path}': {e}", exc_info=True)
-            return None
-
-    def embed_text(self, text: str, normalize: bool = False) -> np.ndarray | None:
-        """
-        Generates an embedding for a given text string.
-
-        Args:
-            text: The text string to embed.
-
-        Returns:
-            A numpy array representing the text embedding, or None if an error occurs.
-        """
+        text = (text or "").strip()
         if not text:
-            logger.warning("Attempted to embed empty text.")
-            return None
-        logger.debug(f"Attempting to embed text: {text[:50]}...")
+            raise ValueError("Query text is empty.")
+        prompt = QUERY_PROMPTS.get(intent)
+        if prompt is None:
+            raise ValueError(f"Unknown query intent '{intent}'. Use one of: {', '.join(QUERY_PROMPTS)}")
+        key = (intent, text)
+        cached = self._query_cache.get(key)
+        if cached is not None:
+            self._query_cache.move_to_end(key)
+            return cached
+        vector = self._encode_many([text], prompt_name=prompt)[0]
+        self._query_cache[key] = vector
+        while len(self._query_cache) > QUERY_CACHE_SIZE:
+            self._query_cache.popitem(last=False)
+        return vector
+
+    def embed_file(self, path: Union[str, Path]) -> np.ndarray:
+        """
+        Embed a whole file as a query ("search with this file"): its segments are
+        embedded exactly like indexed ones and averaged into one vector.
+        """
+        prepared = prepare_file(Path(path))
+        vectors = []
+        for kind, segs in _group_by_embed_kind(prepared.segments).items():
+            for result in self.embed_batch(kind, [s.payload for s in segs]):
+                if isinstance(result, Exception):
+                    raise result
+                vectors.append(result)
+        return normalize_vectors(np.mean(np.stack(vectors), axis=0))
+
+    # ------------------------------------------------------------- batching
+    def embed_batch(self, kind: str, payloads: List[Any]) -> List[Union[np.ndarray, Exception]]:
+        """
+        Embed a homogeneous batch of segment payloads. ``kind`` is the model
+        input type: text | image | audio | video.
+
+        Robust by design: a CUDA OOM halves the batch and retries, and any other
+        failure bisects the batch so that only the offending item(s) fail.
+
+        Returns:
+            One entry per payload: its embedding, or the exception it raised.
+        """
+        if not payloads:
+            return []
         try:
-            text_embeddings = self.model.encode_text(
-                text, truncate_dim=self.embedding_dim
-            )
-            if normalize:
-                text_embeddings = normalize_vectors(text_embeddings)
-            # Ensure the output is consistently 1D for single text inputs
-            logger.info(f"Successfully embedded text")
-            return (
-                text_embeddings.squeeze()
-                if text_embeddings.ndim > 1
-                else text_embeddings
-            )
+            return list(self._encode_kind(kind, payloads))
+        except torch.cuda.OutOfMemoryError as e:
+            torch.cuda.empty_cache()
+            if len(payloads) == 1:
+                return [e]
+            logger.warning(f"CUDA OOM on a {kind} batch of {len(payloads)}; splitting it")
         except Exception as e:
-            logger.error(f"Failed to embed text '{text[:50]}...': {e}", exc_info=True)
-            return None
+            if len(payloads) == 1:
+                return [e]
+        mid = len(payloads) // 2
+        return self.embed_batch(kind, payloads[:mid]) + self.embed_batch(kind, payloads[mid:])
+
+    def _encode_kind(self, kind: str, payloads: List[Any]) -> np.ndarray:
+        if kind == "text":
+            return self._encode_many(payloads)  # already in the Document format
+        inputs = [{kind: p} for p in payloads]
+        if kind == "video":
+            return self._encode_many(inputs, processing_kwargs=FRAME_LIST_PROCESSING)
+        return self._encode_many(inputs)
+
+
+def _group_by_embed_kind(segments) -> "OrderedDict[str, list]":
+    groups: "OrderedDict[str, list]" = OrderedDict()
+    for seg in segments:
+        groups.setdefault(seg.embed_as, []).append(seg)
+    return groups
