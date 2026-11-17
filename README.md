@@ -112,7 +112,8 @@ Everything lives in `src/config.py`. The most useful settings can also be set wi
 | `ZETA_DEVICE` | `cuda` if available | `cuda` or `cpu` |
 | `ZETA_MODALITIES` | `text,image,audio,video` | Load only these encoders. All variants share one vector space, so you can add encoders later without re-indexing. `text` alone needs about 270M params, `text,image,video` about 440M. |
 | `ZETA_EMBEDDING_DIM` | `768` | Matryoshka size: 768 / 512 / 256 / 128. Changing it needs a fresh index. Use 768 or 512 for multimodal retrieval. |
-| `ZETA_BATCH_TEXT` / `_IMAGE` / `_AUDIO` / `_VIDEO` | GPU `32 / 16 / 8 / 4`, CPU `8 / 2 / 8 / 1` | Max segments per forward pass. Batches halve automatically on CUDA OOM. |
+| `ZETA_BATCH_TEXT` / `_IMAGE` / `_AUDIO` / `_VIDEO` | GPU `16 / 1 / 4 / 1`, CPU `8 / 1 / 8 / 1` | Max segments per forward pass, tuned from the measurements below. Batches halve automatically on CUDA OOM. |
+| `ZETA_IMAGE_TOKENS` | `280` | Vision budget per image (70 / 140 / 280 / 560 / 1120). `140` is about 1.9× faster per image at cos 0.957 to the default. Re-index images after changing it. |
 | `ZETA_LOADER_WORKERS` | GPU `min(8, CPUs)`, CPU `2` | Threads that read and decode files while the model runs. On CPU they would compete with PyTorch for cores. |
 | `ZETA_ANN_THRESHOLD` | `50000` | Build an IVF-HNSW-SQ index once a collection reaches this many rows |
 | `ZETA_DATA_DIR` | `./data` | Where the index and uploads live |
@@ -133,6 +134,21 @@ The model runs in `bfloat16` on GPUs that support it, otherwise `float32`. Embed
 5. **Write efficiently.** Rows are written to LanceDB 256 at a time. Afterwards the table is compacted, the keyword index is rebuilt, and large collections get an ANN index.
 
 Progress, throughput and ETA are shown live in the web app and returned by `GET /api/jobs/{id}`.
+
+### Measured performance (RTX 4050 Laptop, 6 GB, bf16)
+
+Segments per second, model only:
+
+| Kind | Batch 1 | Best batch |
+| --- | --- | --- |
+| Text chunks | 45 | 95 (batch 8) |
+| Audio windows (30 s) | 17 | 40 (batch 4) |
+| Images (280 tokens) | 9.2 | none better: batch 16 was 6.2 |
+| Video windows (5 frames) | 3.4 | none better: batch 4 was 2.8 |
+
+The vision tower runs on the GPU (all parameters on `cuda:0`; `pixel_values` arrive on the device). One image at the default budget is already about 2,500 vision tokens and saturates the GPU, which is why images and video aren't batched. The image token budget is the lever: about 111 ms per image at 280, 60 ms at 140 and 43 ms at 70.
+
+End to end, on 129 mixed files (48 photos, 64 notes, 12 audio, 4 video): about 10.0 s unbatched, 8.8 s with the tuned defaults, and 5.9 s with `ZETA_IMAGE_TOKENS=140`. The same set takes about 5 minutes on CPU.
 
 ## How search ranks results
 

@@ -23,6 +23,7 @@ from .config import (
     EMBEDDING_DIMENSION,
     EMBEDDING_MODEL_NAME,
     ENABLED_MODALITIES,
+    IMAGE_SOFT_TOKENS,
     QUERY_CACHE_SIZE,
     QUERY_PROMPTS,
     VIDEO_FRAMES_PER_WINDOW,
@@ -168,6 +169,8 @@ class GemmaEmbedder:
         inputs = [{kind: p} for p in payloads]
         if kind == "video":
             return self._encode_many(inputs, processing_kwargs=FRAME_LIST_PROCESSING)
+        if kind == "image" and IMAGE_SOFT_TOKENS != 280:
+            return self._encode_many(inputs, processing_kwargs={"image": {"max_soft_tokens": IMAGE_SOFT_TOKENS}})
         return self._encode_many(inputs)
 
 

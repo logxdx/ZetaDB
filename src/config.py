@@ -90,17 +90,25 @@ MAX_VIDEO_WINDOWS = 120  # beyond 20 min windows widen to cover the whole video
 # Images are decoded at (roughly) this max side. The default budget of 280
 # soft tokens corresponds to ~800 px, so larger decodes only cost time.
 MAX_IMAGE_SIDE = 1024
+# Vision soft-token budget per image (70, 140, 280, 560, 1120). Image cost is
+# dominated by the GPU vision tower and scales with this. Measured on an RTX
+# 4050 laptop: 280 -> 111 ms/image, 140 -> 60 ms (cos 0.957 vs 280),
+# 70 -> 43 ms (cos 0.936). Changing it requires re-indexing images.
+IMAGE_SOFT_TOKENS = int(os.environ.get("ZETA_IMAGE_TOKENS", 280))
 
 # --- Ingestion pipeline ---
 _ON_GPU = DEVICE.startswith("cuda")
 # Segments are embedded in batches of these sizes (upper bounds: on CUDA OOM a
-# batch is split in half automatically). Batching pays off on GPUs; on CPU the
-# model is compute-bound and padding costs more than batching saves.
+# batch is split in half automatically). Measured on an RTX 4050 laptop GPU:
+#   text  bs1 45 -> bs8 95 seg/s (2.1x)     audio bs1 17 -> bs4 40 seg/s (2.3x)
+#   image / video: one input is already ~2.5k vision tokens and saturates the
+#   GPU, so batching only adds memory pressure (bs16 was 30% slower than bs1).
+# On CPU the model is compute-bound; only audio gains from batching.
 BATCH_SIZES = {
-    "text": int(os.environ.get("ZETA_BATCH_TEXT", 32 if _ON_GPU else 8)),
-    "image": int(os.environ.get("ZETA_BATCH_IMAGE", 16 if _ON_GPU else 2)),
-    "audio": int(os.environ.get("ZETA_BATCH_AUDIO", 8 if _ON_GPU else 8)),
-    "video": int(os.environ.get("ZETA_BATCH_VIDEO", 4 if _ON_GPU else 1)),
+    "text": int(os.environ.get("ZETA_BATCH_TEXT", 16 if _ON_GPU else 8)),
+    "image": int(os.environ.get("ZETA_BATCH_IMAGE", 1)),
+    "audio": int(os.environ.get("ZETA_BATCH_AUDIO", 4 if _ON_GPU else 8)),
+    "video": int(os.environ.get("ZETA_BATCH_VIDEO", 1)),
 }
 # Files prepared together (segments of these files are then batched as above)
 FILES_PER_BATCH = {"text": 16, "image": 16, "audio": 2, "video": 1}
