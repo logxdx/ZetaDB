@@ -87,7 +87,7 @@ export function gradientFor(seed: string): [string, string] {
   return [`oklch(0.68 0.19 ${hue})`, `oklch(0.5 0.2 ${hue2})`]
 }
 
-/** One-line explanation of why a search result matched (after DigUp). */
+/** One-line explanation of why a search result matched. */
 export function matchReason(match: { kind: string; start: number; end: number; words: number } | undefined, modality: string): string | null {
   if (!match) return null
   const words = match.words >= 0.5 ? " · has your words" : ""

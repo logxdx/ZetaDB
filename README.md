@@ -60,8 +60,10 @@ A grid that fits every photo perfectly, videos that play as you hover, and a vie
 
 ---
 
-<sub>
+#### Credits
 
-**Credits** — Embeddings by [EmbeddingGemma 2](https://huggingface.co/google/embeddinggemma-2) (Google DeepMind) via [Sentence Transformers](https://sbert.net). Vector and keyword search by [LanceDB](https://lancedb.com). Interface built with [React](https://react.dev), [shadcn/ui](https://ui.shadcn.com), [Radix](https://www.radix-ui.com), [Tailwind CSS](https://tailwindcss.com), [Motion](https://motion.dev) and [Lucide](https://lucide.dev); served by [FastAPI](https://fastapi.tiangolo.com). Media decoding by [TorchCodec](https://github.com/pytorch/torchcodec) and [FFmpeg](https://ffmpeg.org). The ranking and segmentation approach was inspired by [DigUp](https://github.com/ARahim3/DigUp) and the [awesome-EmbeddingGemma](https://github.com/lattifai/awesome-EmbeddingGemma) list. Demo images are procedurally generated.
-
-</sub>
+- **Model:** [EmbeddingGemma 2](https://huggingface.co/google/embeddinggemma-2) by Google DeepMind, via [Sentence Transformers](https://sbert.net)
+- **Search:** [LanceDB](https://lancedb.com)
+- **Interface:** [shadcn/ui](https://ui.shadcn.com), [Tailwind CSS](https://tailwindcss.com), [Motion](https://motion.dev), [Lucide](https://lucide.dev)
+- **Server:** [FastAPI](https://fastapi.tiangolo.com)
+- **Media:** [TorchCodec](https://github.com/pytorch/torchcodec), [FFmpeg](https://ffmpeg.org)

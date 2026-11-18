@@ -7,7 +7,7 @@ windows, images), one row and one vector per segment, all in the same
 EmbeddingGemma 2 space. Search ranks *files* by their best segment and reports
 where in the file the match is.
 
-Ranking (after DigUp's measured approach):
+Ranking:
 
 * cosine similarities are turned into per-modality z-scores — text vectors
   score systematically higher than image/audio vectors for the same topic, so

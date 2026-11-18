@@ -127,7 +127,7 @@ ANN_INDEX_THRESHOLD = int(os.environ.get("ZETA_ANN_THRESHOLD", 50_000))
 # --- Search ---
 DEFAULT_SEARCH_K = 12  # Default number of results (files) to return
 DEFAULT_TABLE = "library"
-# Ranking (after DigUp): cosine scores are turned into per-modality z-scores so
+# Ranking: cosine scores are turned into per-modality z-scores so
 # text, images, audio and video compete fairly, then a keyword-coverage bonus
 # rewards results that literally contain the query words.
 RANK_MEANING_WEIGHT = 1.0
