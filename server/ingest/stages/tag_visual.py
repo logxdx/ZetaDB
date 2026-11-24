@@ -64,6 +64,49 @@ def _unpack(b: bytes) -> np.ndarray:
     return np.array(struct.unpack(f"<{len(b) // 4}f", b), dtype=np.float32)
 
 
+# Eye's type head names the KIND of image. Its scene tags were learned on
+# photographs, and on anything else they misfire: [M8] a dark bar chart got
+# "food", "person" and "chair" from Eye at 0.67-0.92 while EG2 put them at
+# 0.01-0.03, and the fused average still cleared 0.40. So when Eye's own
+# type head says the image is not a photograph, its scene tags carry no
+# evidence; its type tags ("screenshot", "whiteboard", ...) still do.
+EYE_PHOTO_TYPES = ("photo", "selfie")
+EYE_NON_PHOTO_TYPES = ("screenshot", "photo_of_screen", "receipt", "document", "id_card",
+                       "whiteboard", "map", "chart_or_slide", "meme_or_graphic",
+                       "illustration_or_art")
+
+
+def retract_unsupported(conn: sqlite3.Connection, item_ids: list[int],
+                        tag_rows: list[tuple]) -> int:
+    """Drop machine tags a re-score no longer supports.
+
+    The upsert only ever adds, so a tag accepted on stale evidence (an
+    uncalibrated term, Eye's photo scenes on a chart) stayed forever. A
+    person's decisions (rejected, or source='human') and the captioner's
+    proposals (tag_scores.vlm) are not this stage's to drop."""
+    kept: dict[int, set[int]] = {}
+    for iid, tid, *_ in tag_rows:
+        kept.setdefault(iid, set()).add(tid)
+    n = 0
+    for iid in item_ids:
+        for (tid,) in conn.execute(
+                "SELECT t.term_id FROM item_tags t LEFT JOIN tag_scores s "
+                "ON s.item_id = t.item_id AND s.term_id = t.term_id "
+                "WHERE t.item_id = ? AND t.source = 'machine' AND t.state != 'rejected' "
+                "AND s.vlm IS NULL", (iid,)).fetchall():
+            if tid not in kept.get(iid, set()):
+                conn.execute("DELETE FROM item_tags WHERE item_id = ? AND term_id = ?", (iid, tid))
+                n += 1
+    return n
+
+
+def eye_scenes_apply(scores: dict[str, float]) -> bool:
+    """False when Eye itself says this is not a photograph."""
+    photo = max((scores.get(k, 0.0) for k in EYE_PHOTO_TYPES), default=0.0)
+    other = max((scores.get(k, 0.0) for k in EYE_NON_PHOTO_TYPES), default=0.0)
+    return photo >= other
+
+
 def _term_vectors(terms: list[V.Term], e: Eg2) -> dict[int, np.ndarray]:
     """Vectors for each term prompt, cached across batches.
 
@@ -195,12 +238,15 @@ def _tag(item_ids: list[int]) -> None:
         # scoring will otherwise rank the most "whiteboard-like" photograph
         # in a corpus of photographs as a whiteboard.
         has_text = bool((r["flow_text"] or "").strip())
+        scenes_ok = eye_scores[i] is None or eye_scenes_apply(eye_scores[i])
         for t in terms:
             if t.requires_text and not has_text:
                 continue
             ey = None
             if eye_scores[i] is not None and t.eye_alias:
                 ey = eye_scores[i].get(t.eye_alias)
+                if ey is not None and not scenes_ok and eye.head_of(t.eye_alias) == "scenes":
+                    ey = None
             c = None
             if best_cos[i] is not None and t.id in best_cos[i]:
                 c = V.clip_score(t, best_cos[i][t.id])
@@ -234,6 +280,7 @@ def _tag(item_ids: list[int]) -> None:
                 "eye=excluded.eye, clip=excluded.clip", row)
         for row in tag_rows:
             conn2.execute(TAG_UPSERT, row)
+        retract_unsupported(conn2, [r["id"] for r, _ in work_items], tag_rows)
     writer.submit(work)
 
     acc = sum(1 for r in tag_rows if r[4] == "accepted")

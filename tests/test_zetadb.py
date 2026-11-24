@@ -337,6 +337,32 @@ def test_retagging_never_overturns_a_rejection_or_a_human_tag(tmp_path):
     assert got[tids[2]] == ("machine", "accepted")
 
 
+def test_rescoring_retracts_unsupported_machine_tags_only(tmp_path):
+    """A re-score that drops a machine tag must remove it - but never a
+    rejection, a human tag, or a tag the captioner proposed."""
+    from server.db.conn import init_db
+    from server.ingest.stages.tag_visual import retract_unsupported
+
+    conn = init_db(tmp_path / "t.db")
+    iid = conn.execute("INSERT INTO items(kind, status, source, created_at, updated_at) "
+                       "VALUES ('image','ready','upload',0,0)").lastrowid
+    names = ("food", "chart", "rejected", "human", "vlm")
+    t = {n: conn.execute("INSERT INTO vocab_terms(term, created_at) VALUES (?,0)",
+                         (n,)).lastrowid for n in names}
+    rows = [("food", "machine", "accepted"), ("chart", "machine", "accepted"),
+            ("rejected", "machine", "rejected"), ("human", "human", "accepted"),
+            ("vlm", "machine", "pending")]
+    for n, src, st in rows:
+        conn.execute("INSERT INTO item_tags VALUES (?,?,0.5,?,?,0)", (iid, t[n], src, st))
+    conn.execute("INSERT INTO tag_scores(item_id, term_id, vlm) VALUES (?,?,1.0)", (iid, t["vlm"]))
+    # the re-score still supports 'chart' and nothing else
+    n = retract_unsupported(conn, [iid], [(iid, t["chart"], 0.9, "machine", "accepted", 1)])
+    left = {r[0] for r in conn.execute(
+        "SELECT v.term FROM item_tags x JOIN vocab_terms v ON v.id = x.term_id")}
+    assert n == 1
+    assert left == {"chart", "rejected", "human", "vlm"}
+
+
 def test_reprompting_a_term_clears_its_calibration(tmp_path, monkeypatch):
     """A term's mu/sigma describe ITS prompt's cosines; a new prompt must not
     be scored against them ([M8]: indoors/night/portrait were)."""
@@ -430,3 +456,12 @@ def test_tag_visual_does_not_rescore_when_calibration_is_skipped(monkeypatch):
     monkeypatch.setattr(T.V, "calibrate_clip", lambda: 0)   # < 8 image vectors
     T.run([1])
     assert calls == [[1]]
+
+
+def test_eye_scene_tags_only_count_on_photographs():
+    from server.ingest.stages.tag_visual import eye_scenes_apply
+    assert eye_scenes_apply({"photo": 0.9, "screenshot": 0.1, "food": 0.8})
+    assert not eye_scenes_apply({"photo": 0.1, "chart_or_slide": 0.9, "food": 0.78})
+    assert not eye_scenes_apply({"photo": 0.2, "illustration_or_art": 0.6})
+    assert eye_scenes_apply({"selfie": 0.7, "screenshot": 0.2})
+    assert eye_scenes_apply({})                      # no type evidence: keep scenes

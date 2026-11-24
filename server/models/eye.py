@@ -146,6 +146,12 @@ class Eye:
         self.load_tags_only()
         return tag_id in self.tags
 
+    def head_of(self, tag_id: str) -> str | None:
+        """Which output head a tag reads: 'type', 'scenes', 'reject', ..."""
+        self.load_tags_only()
+        t = self.tags.get(tag_id)
+        return t.output if t else None
+
     def load_tags_only(self) -> None:
         if not self.tags and self.meta_path.exists():
             meta = json.loads(self.meta_path.read_text())
