@@ -401,7 +401,11 @@ def test_tag_visual_calibrates_then_rescores_once(monkeypatch):
     calibration possible is re-scored with it; later batches are not."""
     from server.ingest.stages import tag_visual as T
     calls, state = [], {"uncal": 56}
-    monkeypatch.setattr(T, "reader", lambda: None)
+
+    class Conn:                               # items 7 and 8: an earlier, too-small batch
+        def execute(self, sql):
+            return [(7,), (8,), (1,)]
+    monkeypatch.setattr(T, "reader", lambda: Conn())
     monkeypatch.setattr(T, "_uncalibrated", lambda conn: state["uncal"])
     monkeypatch.setattr(T, "_tag", lambda ids: calls.append(list(ids)))
 
@@ -410,7 +414,8 @@ def test_tag_visual_calibrates_then_rescores_once(monkeypatch):
         return 56
     monkeypatch.setattr(T.V, "calibrate_clip", calibrate)
     T.run([1, 2])
-    assert calls == [[1, 2], [1, 2]]          # scored, calibrated, re-scored
+    # scored, calibrated, then this batch AND the earlier fallback-scored items
+    assert calls == [[1, 2], [1, 2, 7, 8]]
     calls.clear()
     T.run([3])
     assert calls == [[3]]                     # already calibrated: once

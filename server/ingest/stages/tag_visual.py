@@ -111,8 +111,14 @@ def run(item_ids: list[int]) -> None:
     before = _uncalibrated(reader())
     _tag(item_ids)
     if before and V.calibrate_clip() and _uncalibrated(reader()) < before:
-        log.info("calibrated %d term(s) on this batch's vectors; re-scoring it", before)
-        _tag(item_ids)
+        # Everything scored so far used the fallback: earlier batches too
+        # small to calibrate on (a new library's first few images), and
+        # this one. Re-score them all, once.
+        earlier = [r[0] for r in reader().execute("SELECT DISTINCT item_id FROM tag_scores")]
+        ids = sorted(set(item_ids) | set(earlier))
+        log.info("calibrated %d term(s); re-scoring %d item(s) tagged without it",
+                 before, len(ids))
+        _tag(ids)
 
 
 def _tag(item_ids: list[int]) -> None:
