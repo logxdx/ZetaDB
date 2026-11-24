@@ -1,10 +1,17 @@
 """Stage 3 - visual tagging. GPU pool A.
 
-Scores every active vocabulary term against each image from two
-independent signals and fuses them (spec 7.2-7.4):
+Scores every active vocabulary term against each image - and each video, via
+its keyframes - from two independent signals and fuses them (spec 7.2-7.4):
 
-  JoyTag  terms with a Danbooru alias, independent per-tag sigmoid
+  Eye     terms with an Eye alias: Desert Ant Labs' calibrated photo tags
+          (16 photo types, 558 scenes), where 0.5 is the recommended cut
   EG2     every term, zero-shot cosine calibrated per term
+
+Eye replaces JoyTag. JoyTag's Danbooru schema had no word for most of what an
+idea dump holds - screenshot, whiteboard, receipt, chart - and its sigmoid
+meant something different for every tag. Eye's `type` head names exactly
+those, and its per-tag calibration curve makes a score of 0.6 mean the same
+thing for "screenshot" as for "tree".
 
 This stage owns the kind='visual' row in vec_items: the image with NO text
 in it. That is deliberate. Scoring the term "chart" against the kind='item'
@@ -12,9 +19,9 @@ vector - which interleaves the image with its own OCR text - would match
 any screenshot whose text merely says "chart", which is the exact leak
 vocab_terms.requires_text exists to prevent.
 
-The term vectors come from the same model and live in the same space, so
-there is no separate CLIP text tower any more: a term string and an image
-are directly comparable.
+Videos are tagged from up to three keyframes written by the media stage;
+a term's score is its best over those frames, and the middle keyframe's
+image vector becomes the video's kind='visual' row ("looks like").
 """
 from __future__ import annotations
 
@@ -22,6 +29,7 @@ import logging
 import sqlite3
 import struct
 import time
+from pathlib import Path
 
 import numpy as np
 
@@ -29,10 +37,12 @@ from server.config import load
 from server.db.conn import reader
 from server.db.writer import writer
 from server.models.eg2 import Eg2, engine as eg2_engine
-from server.models.joytag import engine as joytag_engine
+from server.models.eye import engine as eye_engine
 from server.search import vocab as V
 
 log = logging.getLogger(__name__)
+
+MAX_KEYFRAMES = 3
 
 _term_vecs: dict[int, np.ndarray] = {}
 _term_vec_stamp = 0.0
@@ -58,16 +68,43 @@ def _term_vectors(terms: list[V.Term], e: Eg2) -> dict[int, np.ndarray]:
     return _term_vecs
 
 
+def _frames_for(conn: sqlite3.Connection, item_id: int, root: Path) -> list[Path]:
+    """Up to MAX_KEYFRAMES keyframes of a video, evenly spread, middle first."""
+    rows = conn.execute(
+        "SELECT frame_path FROM segments WHERE item_id = ? AND kind = 'frames' "
+        "AND frame_path IS NOT NULL ORDER BY start_s", (item_id,)).fetchall()
+    paths = [root / r["frame_path"] for r in rows if (root / r["frame_path"]).exists()]
+    if len(paths) <= MAX_KEYFRAMES:
+        picks = paths
+    else:
+        step = (len(paths) - 1) / (MAX_KEYFRAMES - 1)
+        picks = [paths[round(i * step)] for i in range(MAX_KEYFRAMES)]
+    if picks:
+        mid = picks[len(picks) // 2]
+        picks = [mid] + [p for p in picks if p != mid]
+    return picks
+
+
 def run(item_ids: list[int]) -> None:
     cfg = load()
     conn = reader()
     root = cfg.path("paths.data")
 
     rows = [r for r in (
-        conn.execute("SELECT id, kind, blob_path, flow_text, boxes_json FROM items "
-                     "WHERE id = ?", (i,)).fetchone()
-        for i in item_ids) if r is not None and r["kind"] == "image" and r["blob_path"]]
-    if not rows:
+        conn.execute("SELECT id, kind, blob_path, flow_text FROM items WHERE id = ?",
+                     (i,)).fetchone()
+        for i in item_ids) if r is not None and r["kind"] in ("image", "video")]
+    # Each entry: (item row, [image paths to score]); the first path is the
+    # one whose vector becomes the item's kind='visual' row.
+    work_items: list[tuple[sqlite3.Row, list[Path]]] = []
+    for r in rows:
+        if r["kind"] == "image" and r["blob_path"]:
+            work_items.append((r, [root / r["blob_path"]]))
+        elif r["kind"] == "video":
+            frames = _frames_for(conn, r["id"], root)
+            if frames:
+                work_items.append((r, frames))
+    if not work_items:
         return
 
     terms = V.active_terms(conn)
@@ -75,27 +112,38 @@ def run(item_ids: list[int]) -> None:
         log.info("vocabulary is empty; skipping visual tagging")
         return
 
-    paths = [root / r["blob_path"] for r in rows]
-
-    # --- JoyTag: full 5813-way sigmoid, we read only our own aliases
-    jt = joytag_engine()
-    jt_scores: list[dict[str, float] | None] = [None] * len(rows)
-    if jt.available:
+    # --- Eye: calibrated per-tag confidence; read only our own aliases
+    eye = eye_engine()
+    eye_scores: list[dict[str, float] | None] = [None] * len(work_items)
+    if eye.available:
         try:
-            jt_scores = jt.score_batch(paths)
+            for i, (_, paths) in enumerate(work_items):
+                per_frame = [s for s in eye.score_batch(paths) if s is not None]
+                if per_frame:
+                    eye_scores[i] = {k: max(s.get(k, 0.0) for s in per_frame)
+                                     for k in per_frame[0]}
         except Exception:
-            log.exception("joytag scoring failed")
+            log.exception("eye scoring failed")
 
-    # --- EG2 zero-shot: covers every term, including those Danbooru lacks
+    # --- EG2 zero-shot: covers every term, including those Eye lacks
     e = eg2_engine()
-    img_vecs: list[np.ndarray | None] = [None] * len(rows)
-    packed_img: list[bytes | None] = [None] * len(rows)
+    best_cos: list[dict[int, float] | None] = [None] * len(work_items)
+    packed_img: list[bytes | None] = [None] * len(work_items)
     tvecs: dict[int, np.ndarray] = {}
     if e.vision_available:
         try:
-            packed_img = [e.embed_image(p) for p in paths]   # no text: visual only
-            img_vecs = [_unpack(p) if p else None for p in packed_img]
             tvecs = _term_vectors(terms, e)
+            ids = [t.id for t in terms if t.id in tvecs]
+            tmat = np.stack([tvecs[i] for i in ids]) if ids else None
+            for i, (_, paths) in enumerate(work_items):
+                vecs = [e.embed_image(p) for p in paths]        # no text: visual only
+                if not vecs or vecs[0] is None:
+                    continue
+                packed_img[i] = vecs[0]
+                if tmat is None:
+                    continue
+                cos = np.max(np.stack([tmat @ _unpack(v) for v in vecs if v is not None]), axis=0)
+                best_cos[i] = dict(zip(ids, cos.tolist()))
         except Exception:
             log.exception("eg2 visual tagging failed")
 
@@ -104,26 +152,26 @@ def run(item_ids: list[int]) -> None:
     tag_rows: list[tuple] = []
     score_rows: list[tuple] = []
 
-    for i, r in enumerate(rows):
+    for i, (r, _) in enumerate(work_items):
         iid = r["id"]
         # Does this image contain text at all? Terms that only make sense
-        # on text-bearing images are suppressed when it does not: CLIP will
-        # otherwise rank the most "whiteboard-like" photograph in a corpus
-        # of photographs as a whiteboard.
+        # on text-bearing images are suppressed when it does not: zero-shot
+        # scoring will otherwise rank the most "whiteboard-like" photograph
+        # in a corpus of photographs as a whiteboard.
         has_text = bool((r["flow_text"] or "").strip())
         for t in terms:
             if t.requires_text and not has_text:
                 continue
-            j = None
-            if jt_scores[i] is not None and t.joytag_alias:
-                j = jt_scores[i].get(t.joytag_alias)
+            ey = None
+            if eye_scores[i] is not None and t.eye_alias:
+                ey = eye_scores[i].get(t.eye_alias)
             c = None
-            if img_vecs[i] is not None and t.id in tvecs:
-                c = V.clip_score(t, float(img_vecs[i] @ tvecs[t.id]))
-            if j is None and c is None:
+            if best_cos[i] is not None and t.id in best_cos[i]:
+                c = V.clip_score(t, best_cos[i][t.id])
+            if ey is None and c is None:
                 continue
-            score_rows.append((iid, t.id, j, c, None))
-            fused = V.fuse(j, c, None)
+            score_rows.append((iid, t.id, ey, c, None))
+            fused = V.fuse(ey, c, None)
             if fused >= t.threshold:
                 state = "accepted"
             elif fused >= review_floor:
@@ -136,7 +184,7 @@ def run(item_ids: list[int]) -> None:
         # Persist the visual vector here: it is computed anyway for tag
         # scoring, and this stage already holds the pool A lease the vision
         # encoder needs (spec 7.2).
-        for i, r in enumerate(rows):
+        for i, (r, _) in enumerate(work_items):
             if packed_img[i] is not None:
                 conn2.execute("DELETE FROM vec_items WHERE item_id = ? AND kind = 'visual'",
                               (r["id"],))
@@ -145,9 +193,9 @@ def run(item_ids: list[int]) -> None:
                     (r["id"], packed_img[i]))
         for row in score_rows:
             conn2.execute(
-                "INSERT INTO tag_scores(item_id, term_id, joytag, clip, vlm) VALUES (?,?,?,?,?) "
+                "INSERT INTO tag_scores(item_id, term_id, eye, clip, vlm) VALUES (?,?,?,?,?) "
                 "ON CONFLICT(item_id, term_id) DO UPDATE SET "
-                "joytag=excluded.joytag, clip=excluded.clip", row)
+                "eye=excluded.eye, clip=excluded.clip", row)
         for row in tag_rows:
             # Human tags are terminal: never overwritten by a re-run (spec 7.6).
             conn2.execute(
@@ -158,5 +206,5 @@ def run(item_ids: list[int]) -> None:
     writer.submit(work)
 
     acc = sum(1 for r in tag_rows if r[4] == "accepted")
-    log.info("tagged %d image(s): %d accepted, %d pending (of %d term scores)",
-             len(rows), acc, len(tag_rows) - acc, len(score_rows))
+    log.info("tagged %d item(s): %d accepted, %d pending (of %d term scores)",
+             len(work_items), acc, len(tag_rows) - acc, len(score_rows))

@@ -1,4 +1,8 @@
-"""Hybrid retrieval: tag path + BM25 + two vector views, fused with RRF.
+"""Hybrid retrieval: tag path + BM25 + three vector views, fused with RRF.
+
+The third vector view is `moment`: KNN over audio/video SEGMENTS. An item
+it surfaces carries the window that matched, so a query can land on 12:40
+of a recording or the scene at 0:35 of a clip rather than on the file.
 
 The tag path is what implements the original brief's example - searching
 "tree" returns items tagged `tree` AND items tagged with terms semantically
@@ -17,7 +21,7 @@ from server.models.embeddings import cosine_from_l2
 
 log = logging.getLogger(__name__)
 
-RETRIEVERS = ("tag", "lexical", "text_vec", "img_vec")
+RETRIEVERS = ("tag", "lexical", "text_vec", "img_vec", "moment")
 _FTS_SPECIAL = re.compile(r'[":^*(){}\[\]-]')
 
 
@@ -37,6 +41,8 @@ class Hit:
     score: float = 0.0
     ranks: dict[str, int] = field(default_factory=dict)
     reasons: dict[str, float] = field(default_factory=dict)
+    # Best-matching audio/video window, when the moment retriever found one.
+    moment: dict | None = None
 
     @property
     def why(self) -> list[str]:
@@ -172,6 +178,43 @@ def _knn(conn: sqlite3.Connection, table: str, vec: bytes, limit: int,
     return ranked
 
 
+def _moments(conn: sqlite3.Connection, vec: bytes, limit: int, min_cos: float,
+             rel_margin: float) -> tuple[list[tuple[int, float]], dict[int, dict]]:
+    """KNN over segment vectors, reduced to one best window per item.
+
+    Same two gates as _knn, for the same reasons: an absolute floor so a
+    query with no answer returns nothing, then a margin relative to the best
+    hit so a broad query keeps only what is actually close."""
+    rows = conn.execute(
+        "SELECT segment_id, item_id, distance FROM vec_segments "
+        "WHERE embedding MATCH ? AND k = ? ORDER BY distance", (vec, limit)).fetchall()
+    best: dict[int, tuple[float, int]] = {}
+    for r in rows:
+        cos = cosine_from_l2(float(r["distance"]))
+        if cos < min_cos:
+            continue
+        iid = int(r["item_id"])
+        if iid not in best or cos > best[iid][0]:
+            best[iid] = (cos, int(r["segment_id"]))
+    ranked = sorted(((i, c) for i, (c, _) in best.items()), key=lambda kv: -kv[1])
+    if rel_margin > 0 and ranked:
+        cut = ranked[0][1] - rel_margin
+        ranked = [x for x in ranked if x[1] >= cut]
+    moments: dict[int, dict] = {}
+    if ranked:
+        seg_ids = [best[i][1] for i, _ in ranked]
+        marks = ",".join("?" * len(seg_ids))
+        for s in conn.execute(
+                f"SELECT id, item_id, kind, start_s, end_s, frame_path FROM segments "
+                f"WHERE id IN ({marks})", seg_ids):
+            moments[int(s["item_id"])] = {
+                "segment_id": int(s["id"]), "kind": s["kind"],
+                "start": round(float(s["start_s"]), 2), "end": round(float(s["end_s"]), 2),
+                "frame_url": f"/api/frame/{s['id']}" if s["frame_path"] else None,
+                "score": round(best[int(s["item_id"])][0], 4)}
+    return ranked, moments
+
+
 def search(q: str, *, limit: int = 60, filters: dict | None = None,
            embed_query=None) -> dict:
     """Run every available retriever and fuse. Vector retrievers are skipped
@@ -185,9 +228,11 @@ def search(q: str, *, limit: int = 60, filters: dict | None = None,
         "lexical": cfg.get("search.w_lexical", 1.00),
         "text_vec": cfg.get("search.w_text_vec", 1.00),
         "img_vec": cfg.get("search.w_img_vec", 0.90),
+        "moment": cfg.get("search.w_moment", 1.00),
     }
     pool = max(limit * 3, 50)
     groups: dict[str, list[tuple[int, float]]] = {}
+    moments: dict[int, dict] = {}
 
     seeds = _tag_seeds(conn, q, cfg.get("search.tag_seed_min_cos", 0.75), embed_query)
     if (tagged := _tagged(conn, seeds, pool)):
@@ -220,8 +265,17 @@ def search(q: str, *, limit: int = 60, filters: dict | None = None,
                         groups[group] = hits
                 except Exception:
                     log.debug("vec_items knn skipped for kind=%s", kind, exc_info=True)
+            try:
+                found, moments = _moments(conn, qv, 100, cfg.get("search.min_cos_moment", 0.50),
+                                          rel)
+                if found:
+                    groups["moment"] = found
+            except Exception:
+                log.debug("moment knn skipped", exc_info=True)
 
     hits = _rrf(groups, weights, k)
+    for h in hits:
+        h.moment = moments.get(h.item_id)
     hits = _apply_filters(conn, hits, filters or {})
     return {
         "query": q,

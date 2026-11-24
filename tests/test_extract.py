@@ -122,7 +122,7 @@ def test_clip_score_requires_an_outlier_not_an_average():
     logic under test is unchanged — only the band it operates on moved."""
     from server.search.vocab import Term, clip_score
 
-    t = Term(id=1, term="bird", joytag_alias=None, prompt_template="a photo of {term}",
+    t = Term(id=1, term="bird", eye_alias=None, prompt_template="a photo of {term}",
              threshold=0.40, clip_mu=0.556, clip_sigma=0.03)
     at_mean = clip_score(t, 0.556)            # z = 0
     one_sigma = clip_score(t, 0.586)          # z = 1
@@ -136,7 +136,7 @@ def test_clip_score_requires_an_outlier_not_an_average():
 
 def test_clip_score_falls_back_when_uncalibrated():
     from server.search.vocab import Term, clip_score
-    t = Term(id=1, term="x", joytag_alias=None, prompt_template="{term}",
+    t = Term(id=1, term="x", eye_alias=None, prompt_template="{term}",
              threshold=0.4, clip_mu=None, clip_sigma=None)
     assert 0.0 <= clip_score(t, 0.30) <= 1.0
 
@@ -152,7 +152,7 @@ def test_clip_score_has_an_absolute_floor():
     jina's wider band did."""
     from server.search.vocab import Term, clip_score
 
-    t = Term(id=1, term="whiteboard", joytag_alias=None, prompt_template="{term}",
+    t = Term(id=1, term="whiteboard", eye_alias=None, prompt_template="{term}",
              threshold=0.40, clip_mu=0.38, clip_sigma=0.02)
     # 3 sigma above a LOW mean is still a low absolute similarity
     assert clip_score(t, 0.44) == 0.0, "below the absolute floor must score zero"

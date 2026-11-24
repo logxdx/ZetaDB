@@ -29,6 +29,8 @@ from server.config import load
 from server.db.conn import reader
 from server.db.writer import writer
 from server.ingest.ocr_quality import underdetected
+from server.engine import ModelSpec
+from server.engine.core import engine as model_engine
 from server.models.llama_server import LlamaServer, find_binary
 
 log = logging.getLogger(__name__)
@@ -126,6 +128,15 @@ def unload() -> None:
     if _srv is not None:
         _srv.stop()
         _srv = None
+
+
+# The captioner is the engine's pool B model. Registering it means a pool A
+# lease unloads it (kills llama-server and waits for the VRAM to come back)
+# without app.py having to know it exists.
+model_engine.register(ModelSpec(
+    name="vlm", pool="B", backend="llama.cpp", unload=unload,
+    provider=lambda: "llama.cpp" if _srv is not None else "not loaded",
+    loaded=lambda: _srv is not None))
 
 
 def _encode(path: Path, long_edge: int) -> tuple[str, str]:

@@ -39,33 +39,6 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 log = logging.getLogger("iwashere")
 
 
-def _register_unloaders() -> None:
-    """Without these the arbiter releases a lease but the models stay
-    resident, and the next pool eventually fails to allocate."""
-    from server.ingest.arbiter import arbiter
-
-    def free_pool_a() -> None:
-        for mod, getter in (("server.models.ppocr", "engine"),
-                            ("server.models.joytag", "engine"),
-                            ("server.models.eg2", "engine")):
-            try:
-                import importlib
-                importlib.import_module(mod).__dict__[getter]().unload()
-            except Exception:
-                log.debug("unload failed for %s", mod, exc_info=True)
-
-    arbiter.register_unloader("A", free_pool_a)
-
-    def free_pool_b() -> None:
-        try:
-            from server.ingest.stages import caption
-            caption.unload()
-        except Exception:
-            log.debug("pool B unload failed", exc_info=True)
-
-    arbiter.register_unloader("B", free_pool_b)
-
-
 def _register_stages() -> None:
     """Register the stage handlers that are actually available.
 
@@ -90,6 +63,11 @@ def _register_stages() -> None:
     except Exception:
         log.info("extraction stage unavailable")
     try:
+        from server.ingest.stages import media
+        scheduler.register("media", media.run)
+    except Exception:
+        log.info("media stage unavailable; audio and video will not be segmented")
+    try:
         from server.ingest.stages import tag_visual
         scheduler.register("tag_visual", tag_visual.run)
     except Exception:
@@ -101,6 +79,23 @@ def _register_stages() -> None:
         log.info("captioning stage unavailable")
 
 
+def _reseed_vocab_if_flagged() -> None:
+    """Schema v4 renamed JoyTag's aliases to Eye's and cleared them; the
+    migration leaves a flag, and the seed is re-applied once here so every
+    existing term gets its Eye alias without a manual /api/vocab/seed."""
+    from server.db.conn import reader
+    from server.search import vocab as V
+    row = reader().execute("SELECT value FROM meta WHERE key = 'vocab_reseed'").fetchone()
+    if not row or row["value"] != "1":
+        return
+    try:
+        V.seed_from_yaml()
+        writer.submit(lambda c: c.execute("DELETE FROM meta WHERE key = 'vocab_reseed'"))
+        log.info("vocabulary re-seeded with Eye aliases")
+    except Exception:
+        log.exception("vocabulary re-seed failed; run POST /api/vocab/seed")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     cfg = load()
@@ -108,8 +103,8 @@ async def lifespan(app: FastAPI):
         cfg.path(key).mkdir(parents=True, exist_ok=True)
     init_db().close()
     writer.start()
+    _reseed_vocab_if_flagged()
     hub.bind(asyncio.get_running_loop())
-    _register_unloaders()
     _register_stages()
     scheduler.start()
     watcher.start()
@@ -123,17 +118,14 @@ async def lifespan(app: FastAPI):
 
 
 def _shutdown_models() -> None:
-    """llama-server runs as a subprocess; without this it survives the
-    parent and keeps holding VRAM, and successive runs stack up orphans.
-
-    The embedding model no longer needs stopping: EG2 is an in-process ONNX
-    session, not a subprocess. Only the captioner still spawns one.
-    """
+    """Unload every registered model. llama-server runs as a subprocess;
+    without this it survives the parent and keeps holding VRAM, and
+    successive runs stack up orphans."""
     try:
-        from server.ingest.stages import caption
-        caption.unload()
+        from server.engine.core import engine as model_engine
+        model_engine.unload_all()
     except Exception:
-        pass
+        log.debug("engine shutdown failed", exc_info=True)
 
 
 app = FastAPI(title="iwashere", version="0.1.0", lifespan=lifespan)

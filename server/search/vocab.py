@@ -28,7 +28,7 @@ log = logging.getLogger(__name__)
 class Term:
     id: int
     term: str
-    joytag_alias: str | None
+    eye_alias: str | None
     prompt_template: str
     threshold: float
     clip_mu: float | None
@@ -41,10 +41,10 @@ class Term:
 
 def active_terms(conn: sqlite3.Connection | None = None) -> list[Term]:
     c = conn or reader()
-    return [Term(r["id"], r["term"], r["joytag_alias"], r["prompt_template"],
+    return [Term(r["id"], r["term"], r["eye_alias"], r["prompt_template"],
                  r["threshold"], r["clip_mu"], r["clip_sigma"], bool(r["requires_text"]))
             for r in c.execute(
-                "SELECT id, term, joytag_alias, prompt_template, threshold, clip_mu, "
+                "SELECT id, term, eye_alias, prompt_template, threshold, clip_mu, "
                 "clip_sigma, requires_text "
                 "FROM vocab_terms WHERE state = 'active' ORDER BY term")]
 
@@ -65,12 +65,12 @@ def seed_from_yaml(path: Path | None = None) -> int:
             if not term:
                 continue
             cur = conn.execute(
-                "INSERT INTO vocab_terms(term, kind, joytag_alias, prompt_template, "
+                "INSERT INTO vocab_terms(term, kind, eye_alias, prompt_template, "
                 "threshold, requires_text, state, created_at) VALUES (?,?,?,?,?,?, 'active', ?) "
-                "ON CONFLICT(term) DO UPDATE SET joytag_alias = excluded.joytag_alias, "
+                "ON CONFLICT(term) DO UPDATE SET eye_alias = excluded.eye_alias, "
                 "prompt_template = excluded.prompt_template, kind = excluded.kind, "
                 "requires_text = excluded.requires_text",
-                (term, e.get("kind"), e.get("joytag"),
+                (term, e.get("kind"), e.get("eye"),
                  e.get("prompt", "a photo of {term}"),
                  load().get("tagging.default_threshold", 0.40),
                  int(bool(e.get("requires_text"))), now))
@@ -261,12 +261,15 @@ def clip_score(term: Term, cosine: float) -> float:
     return 1.0 / (1.0 + math.exp(-(z - z0) / slope))
 
 
-def fuse(joytag: float | None, clip: float | None, vlm: float | None) -> float:
+def fuse(eye: float | None, clip: float | None, vlm: float | None) -> float:
+    """Weighted mean of whichever signals scored the term. Eye's value is
+    already a calibrated confidence (its own per-tag curve); the zero-shot
+    score is calibrated per term here; the VLM's is a proposal match."""
     cfg = load()
-    w = {"j": cfg.get("tagging.w_joytag", 0.45), "c": cfg.get("tagging.w_clip", 0.30),
+    w = {"e": cfg.get("tagging.w_eye", 0.45), "c": cfg.get("tagging.w_clip", 0.30),
          "v": cfg.get("tagging.w_vlm", 0.25)}
     num = den = 0.0
-    for key, val in (("j", joytag), ("c", clip), ("v", vlm)):
+    for key, val in (("e", eye), ("c", clip), ("v", vlm)):
         if val is not None:
             num += w[key] * val
             den += w[key]

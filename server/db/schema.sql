@@ -1,4 +1,4 @@
--- iwashere schema. Applied by server.db.conn.init_db().
+-- ZetaDB schema. Applied by server.db.conn.init_db().
 -- Verified against SQLite 3.53.1 + sqlite-vec v0.1.9 (M0).
 
 PRAGMA journal_mode = WAL;
@@ -8,7 +8,7 @@ PRAGMA busy_timeout = 5000;
 
 CREATE TABLE IF NOT EXISTS items (
   id            INTEGER PRIMARY KEY,
-  kind          TEXT NOT NULL CHECK (kind IN ('note','image')),
+  kind          TEXT NOT NULL CHECK (kind IN ('note','image','audio','video')),
   status        TEXT NOT NULL DEFAULT 'processing'
                   CHECK (status IN ('processing','ready','error')),
   title         TEXT,
@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS items (
   width         INTEGER,
   height        INTEGER,
   bytes         INTEGER,
+  duration      REAL,          -- seconds; audio and video only
   content_hash  TEXT UNIQUE,
   dhash         BLOB,
   near_dup_of   INTEGER REFERENCES items(id) ON DELETE SET NULL,
@@ -51,7 +52,7 @@ CREATE TABLE IF NOT EXISTS vocab_terms (
   id              INTEGER PRIMARY KEY,
   term            TEXT NOT NULL UNIQUE,
   kind            TEXT,
-  joytag_alias    TEXT,
+  eye_alias       TEXT,          -- an Eye tag id (eye_meta.json), or NULL
   -- Some concepts are only meaningful on an image that contains text.
   -- CLIP will happily rank a photograph as the most "whiteboard-like"
   -- thing in a corpus of photographs; requiring OCR evidence kills that
@@ -90,7 +91,7 @@ CREATE INDEX IF NOT EXISTS idx_item_tags_term ON item_tags(term_id, state);
 CREATE TABLE IF NOT EXISTS tag_scores (
   item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
   term_id INTEGER NOT NULL REFERENCES vocab_terms(id) ON DELETE CASCADE,
-  joytag  REAL,
+  eye     REAL,
   clip    REAL,
   vlm     REAL,
   PRIMARY KEY (item_id, term_id)
@@ -184,6 +185,33 @@ CREATE VIRTUAL TABLE IF NOT EXISTS fts_items USING fts5(
 -- the exact leak vocab_terms.requires_text exists to prevent.
 CREATE VIRTUAL TABLE IF NOT EXISTS vec_items USING vec0(
   rowid INTEGER PRIMARY KEY,
+  item_id INTEGER,
+  kind TEXT,
+  embedding FLOAT[768]
+);
+
+-- Audio and video are searched by MOMENT. EmbeddingGemma 2 hears only the
+-- first 30 s of an audio input and sees a video as a handful of frames, so
+-- long media is cut into windows (spec 18):
+--   kind='sound'   30 s of audio every 25 s - an audio file, or a video's
+--                  soundtrack. Silent windows are skipped.
+--   kind='frames'  a 10 s window of a video, 5 frames, vision only.
+-- start_s/end_s are seconds; frame_path is the window's middle frame (frames
+-- only), used for tagging and as the moment's thumbnail.
+CREATE TABLE IF NOT EXISTS segments (
+  id         INTEGER PRIMARY KEY,
+  item_id    INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+  kind       TEXT NOT NULL CHECK (kind IN ('sound','frames')),
+  start_s    REAL NOT NULL,
+  end_s      REAL NOT NULL,
+  frame_path TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_segments_item ON segments(item_id, start_s);
+
+-- One vector per segment, same 768-d space as everything else, so a text
+-- query, a note or an image can find the moment directly.
+CREATE VIRTUAL TABLE IF NOT EXISTS vec_segments USING vec0(
+  segment_id INTEGER PRIMARY KEY,
   item_id INTEGER,
   kind TEXT,
   embedding FLOAT[768]

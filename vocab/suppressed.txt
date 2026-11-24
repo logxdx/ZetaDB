@@ -1,3 +1,3 @@
 Tags suppressed before tag fusion.
-# JoyTag uses the Danbooru schema, which is heavily NSFW-weighted.
+# Terms listed here are never machine-applied, whichever model scores them.
 # One tag per line; blank lines and # comments ignored.

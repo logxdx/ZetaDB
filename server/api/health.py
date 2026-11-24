@@ -10,7 +10,7 @@ from fastapi import APIRouter
 from server.config import load
 from server.db.conn import reader, versions
 from server.db.writer import writer
-from server.ingest.arbiter import arbiter
+from server.engine.core import engine as model_engine
 from server.models import probes, vram
 
 router = APIRouter(prefix="/api", tags=["health"])
@@ -50,7 +50,7 @@ def health(refresh: bool = False) -> dict:
                "size_mb": round(db_path.stat().st_size / 1e6, 2) if db_path.exists() else 0,
                "counts": counts, "writer_queue_depth": writer.depth},
         "gpu": gpu,
-        "arbiter": arbiter.status(),
+        "engine": model_engine.status(),
         "models": models,
         "probe_cache": "live" if refresh else "cached",
     }

@@ -64,10 +64,10 @@ def test_model_wrappers_are_singletons():
     is the pool A tenant and a second CUDA session would fail to allocate
     just as silently."""
     from server.models.eg2 import engine as eg2_engine
-    from server.models.joytag import engine as joytag_engine
+    from server.models.eye import engine as eye_engine
     from server.models.ppocr import engine as ppocr_engine
 
-    for factory in (eg2_engine, joytag_engine, ppocr_engine):
+    for factory in (eg2_engine, eye_engine, ppocr_engine):
         assert factory() is factory(), f"{factory.__module__} is not a singleton"
 
 
@@ -80,7 +80,7 @@ def test_no_module_constructs_a_model_directly():
     offenders = []
     for py in root.rglob("*.py"):
         for n, line in enumerate(py.read_text().splitlines(), 1):
-            if re.search(r"\b(Eg2|JoyTag|PPOCR)\(\)", line) \
+            if re.search(r"\b(Eg2|Eye|PPOCR)\(\)", line) \
                     and "_engine = " not in line:
                 offenders.append(f"{py.relative_to(root)}:{n}: {line.strip()}")
     assert not offenders, "construct via engine() instead:\n" + "\n".join(offenders)

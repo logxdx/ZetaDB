@@ -56,7 +56,7 @@ def init_db(db_path: Path | None = None) -> sqlite3.Connection:
     conn.executescript(_SCHEMA.read_text())
     _migrate(conn)
     conn.execute(
-        "INSERT INTO meta(key, value) VALUES ('schema_version','3') "
+        "INSERT INTO meta(key, value) VALUES ('schema_version','4') "
         "ON CONFLICT(key) DO UPDATE SET value = excluded.value"
     )
     return conn
@@ -70,6 +70,7 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE vocab_terms ADD COLUMN "
                      "requires_text INTEGER NOT NULL DEFAULT 0")
     _migrate_v3_vectors(conn)
+    _migrate_v4_eye_and_media(conn)
 
 
 def _migrate_v3_vectors(conn: sqlite3.Connection) -> None:
@@ -133,6 +134,81 @@ def _migrate_v3_vectors(conn: sqlite3.Connection) -> None:
         "WHERE clip_mu IS NOT NULL OR clip_sigma IS NOT NULL").rowcount
     log.warning("schema v3: requeued %d item(s) for embed, %d for tag_visual, "
                 "cleared stale calibration on %d term(s)", n, m, c)
+
+
+def _items_ddl(name: str = "items") -> str:
+    """The items CREATE TABLE statement from schema.sql, optionally renamed."""
+    text = _SCHEMA.read_text()
+    start = text.index("CREATE TABLE IF NOT EXISTS items (")
+    end = text.index(");", start) + 2
+    ddl = text[start:end]
+    return ddl.replace("CREATE TABLE IF NOT EXISTS items (", f"CREATE TABLE {name} (", 1)
+
+
+def _migrate_v4_eye_and_media(conn: sqlite3.Connection) -> None:
+    """v3 -> v4: JoyTag becomes Eye, and audio and video become items.
+
+    * vocab_terms.joytag_alias -> eye_alias, tag_scores.joytag -> eye. The
+      old VALUES are dropped, not carried: an alias was a Danbooru tag name
+      and a score was JoyTag's sigmoid, and neither means anything to Eye.
+      The aliases are re-seeded from vocab/seed.yaml at startup, and every
+      image is requeued for tag_visual so Eye's scores replace JoyTag's.
+      Human tags are untouched - only machine fields are recomputed.
+    * items.kind gains 'audio' and 'video', and items gains `duration`.
+      SQLite cannot alter a CHECK constraint, so the table is rebuilt the
+      documented way (create, copy, drop, rename) with foreign keys off.
+      Row ids are preserved, which matters: fts_items is contentless and
+      keyed on them, and every other table references them.
+
+    Idempotent, like v3: each step checks before acting.
+    """
+    vt = {r["name"] for r in conn.execute("PRAGMA table_info(vocab_terms)")}
+    ts = {r["name"] for r in conn.execute("PRAGMA table_info(tag_scores)")}
+    retag = False
+    if "joytag_alias" in vt and "eye_alias" not in vt:
+        conn.execute("ALTER TABLE vocab_terms RENAME COLUMN joytag_alias TO eye_alias")
+        conn.execute("UPDATE vocab_terms SET eye_alias = NULL")
+        retag = True
+    if "joytag" in ts and "eye" not in ts:
+        conn.execute("ALTER TABLE tag_scores RENAME COLUMN joytag TO eye")
+        conn.execute("UPDATE tag_scores SET eye = NULL")
+        retag = True
+
+    row = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='items'"
+                       ).fetchone()
+    if row and "'audio'" not in (row["sql"] or ""):
+        log.warning("schema v4: rebuilding items to admit audio and video")
+        old_cols = [r["name"] for r in conn.execute("PRAGMA table_info(items)")]
+        conn.execute("PRAGMA foreign_keys = OFF")
+        try:
+            conn.execute("BEGIN")
+            conn.execute("DROP TABLE IF EXISTS items_v4")
+            conn.execute(_items_ddl("items_v4"))
+            new_cols = {r["name"] for r in conn.execute("PRAGMA table_info(items_v4)")}
+            cols = ", ".join(c for c in old_cols if c in new_cols)
+            conn.execute(f"INSERT INTO items_v4({cols}) SELECT {cols} FROM items")
+            conn.execute("DROP TABLE items")
+            conn.execute("ALTER TABLE items_v4 RENAME TO items")
+            conn.execute("COMMIT")
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+        finally:
+            conn.execute("PRAGMA foreign_keys = ON")
+        conn.executescript(_SCHEMA.read_text())        # recreate the items indexes
+        bad = conn.execute("PRAGMA foreign_key_check").fetchall()
+        if bad:
+            log.error("schema v4: %d foreign key violation(s) after rebuild", len(bad))
+
+    if retag:
+        n = conn.execute(
+            "INSERT INTO ingest_queue(item_id, stage, enqueued_at) "
+            "SELECT id, 'tag_visual', unixepoch() FROM items "
+            "WHERE kind = 'image' AND blob_path IS NOT NULL AND status != 'error'"
+        ).rowcount
+        conn.execute("INSERT INTO meta(key, value) VALUES ('vocab_reseed','1') "
+                     "ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+        log.warning("schema v4: JoyTag -> Eye; requeued %d image(s) for tag_visual", n)
 
 
 def versions(conn: sqlite3.Connection) -> dict[str, str]:

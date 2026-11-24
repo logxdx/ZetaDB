@@ -15,13 +15,13 @@ from server.config import load
 from server.db.conn import reader
 from server.db.writer import writer
 from server.ingest.events import hub
-from server.ingest.stages.intake import (ingest_image, ingest_note, ingest_text_file,
-                                         is_image, is_text)
+from server.ingest.stages.intake import (ingest_image, ingest_media, ingest_note,
+                                         ingest_text_file, is_image, is_media, is_text)
 
 router = APIRouter(prefix="/api", tags=["items"])
 
 CARD_FIELDS = (
-    "id, kind, status, title, body, thumb_path, mime, width, height, "
+    "id, kind, status, title, body, thumb_path, mime, width, height, duration, "
     "caption, caption_model, near_dup_of, project_id, created_at, updated_at"
 )
 
@@ -51,7 +51,7 @@ def card(row: sqlite3.Row, tags: list[dict] | None = None) -> dict[str, Any]:
     d["tags"] = tags or []
     if d.get("thumb_path"):
         d["thumb_url"] = f"/api/thumb/{d['id']}"
-    if d["kind"] == "image":
+    if d["kind"] in ("image", "audio", "video"):
         d["file_url"] = f"/api/file/{d['id']}"
     d.pop("thumb_path", None)
     # Notes carry their text; images carry a preview of their OCR/caption.
@@ -151,7 +151,17 @@ def get_item(item_id: int) -> dict:
         "SELECT stage, error, ts FROM item_errors WHERE item_id = ? ORDER BY ts DESC", (item_id,))]
     d["near_dups"] = [r["id"] for r in conn.execute(
         "SELECT id FROM items WHERE near_dup_of = ?", (item_id,))]
+    d["segments"] = [segment_card(r) for r in conn.execute(
+        "SELECT id, kind, start_s, end_s, frame_path FROM segments "
+        "WHERE item_id = ? ORDER BY start_s, kind", (item_id,))]
     return d
+
+
+def segment_card(r: sqlite3.Row) -> dict[str, Any]:
+    """One audio/video window: when it is, and (frames) what it shows."""
+    return {"id": r["id"], "kind": r["kind"],
+            "start": round(float(r["start_s"]), 2), "end": round(float(r["end_s"]), 2),
+            "frame_url": f"/api/frame/{r['id']}" if r["frame_path"] else None}
 
 
 @router.post("/items")
@@ -177,9 +187,11 @@ async def create_items(files: list[UploadFile] = File(default=[]),
                     r = ingest_image(tmp, source="upload", title=Path(up.filename).stem)
                 elif is_text(tmp):
                     r = ingest_text_file(tmp, source="upload")
+                elif is_media(tmp):
+                    r = ingest_media(tmp, source="upload", title=Path(up.filename).stem)
                 else:
                     created.append({"filename": up.filename,
-                                    "error": "unsupported type — images, .txt or .md"})
+                                    "error": "unsupported type — images, audio, video, .txt or .md"})
                     continue
                 created.append({"id": r.item_id, "created": r.created,
                                 "duplicate_of": r.duplicate_of, "near_dup_of": r.near_dup_of})
@@ -219,7 +231,7 @@ def patch_item(item_id: int, payload: dict = Body(...)) -> dict:
 @router.delete("/items/{item_id}")
 def delete_item(item_id: int) -> dict:
     def work(conn: sqlite3.Connection) -> None:
-        for t in ("vec_items", "vec_phash"):
+        for t in ("vec_items", "vec_phash", "vec_segments"):
             conn.execute(f"DELETE FROM {t} WHERE item_id = ?", (item_id,))
         conn.execute("DELETE FROM fts_items WHERE rowid = ?", (item_id,))
         conn.execute("DELETE FROM items WHERE id = ?", (item_id,))
@@ -245,7 +257,22 @@ def thumb(item_id: int) -> FileResponse:
 
 @router.get("/file/{item_id}")
 def file(item_id: int) -> FileResponse:
+    """The original file. Starlette's FileResponse answers Range requests,
+    which is what lets <video>/<audio> seek straight to a matched moment."""
     return _media(item_id, "blob_path")
+
+
+@router.get("/frame/{segment_id}")
+def frame(segment_id: int) -> FileResponse:
+    """The keyframe of one video window - the picture of a moment."""
+    row = reader().execute("SELECT frame_path FROM segments WHERE id = ?",
+                           (segment_id,)).fetchone()
+    if row is None or not row["frame_path"]:
+        raise HTTPException(404, "no such frame")
+    path = load().path("paths.data") / row["frame_path"]
+    if not path.exists():
+        raise HTTPException(404, "frame missing on disk")
+    return FileResponse(path, headers={"Cache-Control": "public, max-age=31536000, immutable"})
 
 
 @router.get("/events")

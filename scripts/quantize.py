@@ -2,7 +2,7 @@
 """Static INT8 quantisation of the ONNX models.
 
     uv run scripts/quantize.py              # quantise everything missing
-    uv run scripts/quantize.py joytag       # one model
+    uv run scripts/quantize.py ppocr_det    # one model
     uv run scripts/quantize.py --force      # redo
 
 Two recipes, chosen by architecture:
@@ -13,13 +13,11 @@ Two recipes, chosen by architecture:
   produces a graph TensorRT can consume directly to build an INT8 engine,
   so one artefact serves both backends.
 
-  DYNAMIC (JoyTag) - a ViT is MatMul-heavy, which is exactly what dynamic
-  quantisation covers, and the CNN stem is a small fraction of the work.
-  Static was tried first and was the wrong call: calibrating a 366 MB ViT
-  augments the graph to capture every intermediate tensor, which exhausted
-  15 GB of RAM and was OOM-killed. Dynamic needs no calibration pass, runs
-  in seconds and costs a few points of nothing on a tagging head whose
-  output we threshold anyway.
+  DYNAMIC - for MatMul-heavy ViTs, where dynamic quantisation covers most
+  of the work. It was used for JoyTag (static calibration of a 366 MB ViT
+  exhausted 15 GB of RAM). No current model needs it: Eye, which replaced
+  JoyTag, already ships int8 weights and runs at FP16 on TensorRT, so the
+  set below is empty but the recipe is kept.
 
 Each model gets its own calibration reader because each has its own
 preprocessing; they reuse the exact functions the runtime uses, so
@@ -136,17 +134,11 @@ def _rec_batches(paths: list[Path], input_name: str) -> list[dict]:
     return out
 
 
-def _joytag_batches(paths: list[Path], input_name: str) -> list[dict]:
-    from server.models.joytag import engine
-    jt = engine()
-    return [{input_name: jt._prep(p)[None]} for p in paths]
-
-
 BUILDERS = {
     "ppocr_det": _det_batches,
     "ppocr_rec": _rec_batches,
 }
-DYNAMIC = {"joytag"}          # see the module docstring
+DYNAMIC: set[str] = set()     # see the module docstring
 
 # Nodes kept at full precision. PP-OCR recognition ends in an 18710-way CTC
 # classifier, and quantising that head is what wrecked accuracy: measured

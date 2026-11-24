@@ -45,15 +45,20 @@ repo      = "PaddlePaddle/PP-OCRv6_medium_rec_onnx"
 backend   = "onnx"
 pool      = "A"
 
-[models.joytag]
-# Ships model.onnx as well as safetensors, so no torch in the serving path.
-# top_tags.txt is the 5000-tag index our vocabulary aliases point into.
+[models.eye]
+# Desert Ant Labs' Eye (PE-Core S/16-384 encoder + tag heads), used with
+# permission. Replaces JoyTag: calibrated per-tag confidence over 16 photo
+# types and 558 Open Images scenes, where JoyTag gave an uncalibrated sigmoid
+# over a Danbooru schema with no word for "screenshot" or "whiteboard".
+# eye.tflite is converted once by scripts/convert_eye.py to eye_photo.onnx
+# ([M0] parity vs LiteRT over 24 real images: max |diff| 1.3e-4 on every
+# head, embedding cosine 1.000000), and then runs in the engine like any
+# other ONNX model.
 role      = "vocab-tag-scoring"
-repo      = "fancyfeast/joytag"
-backend   = "onnx"
+repo      = "desert-ant-labs/eye"
+backend   = "auto"          # TensorRT FP16 -> CUDA -> CPU, via server.engine
 pool      = "A"
-resolution = 448
-threshold_default = 0.40
+resolution = 384
 
 [models.eg2]
 # EmbeddingGemma 2 (Apache-2.0). One 768-d space for text AND images, which
@@ -88,12 +93,13 @@ threshold_default = 0.40
 # int8 still wins on size (509 MB against 878 MB) and speed, at no
 # measurable cost, so it stays.
 #
-# The 300M audio encoder is deliberately not in file_glob: intake accepts
-# images and text only, so it would be ~195 MB of weights we never load.
+# The audio encoder joined in schema v4, when audio and video became items:
+# it embeds 30 s sound windows (an audio file, or a video's soundtrack).
 role       = "multimodal-embedding"
 repo       = "onnx-community/embeddinggemma-2-ONNX"
 backend    = "onnx"
-file_glob  = ["onnx/model_quantized.onnx*", "onnx/vision_encoder_quantized.onnx*"]
+file_glob  = ["onnx/model_quantized.onnx*", "onnx/vision_encoder_quantized.onnx*",
+              "onnx/audio_encoder_quantized.onnx*"]
 dtype      = "quantized"
 pool       = "A"             # vision encoder only
 # The backbone is the only half a search query needs, so it stays off the
@@ -116,11 +122,38 @@ truncate_dim      = 0
 #   140                      ->  624 MB, 0.51 s/image, recall@1 100%, margin 0.291
 # 280 costs 2.5x the VRAM for 0.018 of margin. Pool A has ~1739 MB once the
 # captioner holds its 3661 MB of pool B, so at 280 the vision encoder alone
-# fills pool A and PP-OCR + JoyTag have nowhere to live. 140 it is.
+# fills pool A and PP-OCR + Eye have nowhere to live. 140 it is.
 # (8 images is a thin sample - re-measure on a real corpus before trusting
 # the recall figure. The margin delta is the sturdier of the two numbers.)
 image_soft_tokens = 140
+# Per video frame; the checkpoint's own video processor uses 140.
+video_soft_tokens = 140
 max_text_tokens   = 8192
+# Which graph each encoder runs. The int8 graphs are dynamically quantised,
+# which TensorRT cannot run, so the engine sends them to the CUDA EP. Set
+# vision_dtype = "fp16" (and download onnx/vision_encoder_fp16.onnx*) to put
+# the vision encoder on TensorRT FP16 - see spec 18.3: unmeasured here yet.
+vision_backend = "auto"
+audio_backend  = "auto"
+
+[engine]
+# One engine runs every model (server.engine): TensorRT FP16 -> CUDA -> CPU
+# for ONNX graphs, llama.cpp for the VLM, all under the [gpu] budget.
+# TurboOCR: builder level 3 cuts TRT build time 3-5x for a small speed cost.
+trt_opt_level = 3
+
+[media]
+# Audio and video are searched by MOMENT (spec 18). EG2's audio front end
+# truncates at 480 000 samples = 30 s, so longer audio is windowed; video
+# is vision-only frames, so its soundtrack is windowed as audio too.
+audio_window_s    = 30.0
+audio_hop_s       = 25.0
+silence_rms       = 0.003      # ~ -50 dBFS; quieter windows are skipped
+max_audio_windows = 240        # past ~100 min the hop widens to cover it all
+video_window_s    = 10.0
+frames_per_window = 5          # one frame every 2 s
+frame_max_side    = 512        # frames are downscaled before the processor
+max_video_windows = 120        # past 20 min the windows widen to cover it all
 
 [llama]
 # Which llama.cpp server binary to spawn for pool B. [M0] This machine has
@@ -211,7 +244,6 @@ runtime_fetched = true   # engine + weights land in ~/.cache/cactus-needle
 # still gives the 3-5x.
 det_backend    = "tensorrt"  # auto | tensorrt | onnx-cuda | onnx-cpu
 rec_backend    = "tensorrt"
-trt_opt_level  = 3           # TurboOCR: level 3 cuts build time 3-5x
 # Recognition is the one model NOT quantised. Measured on the test corpus,
 # INT8 PTQ preserved 13/28 text lines even with the 18710-way classifier
 # head excluded - "finance@acme.example" became "finiance@acme.examp",
@@ -270,7 +302,7 @@ escalate_on_text_len  = 600
 dim = 768
 
 [tagging]
-w_joytag  = 0.45
+w_eye     = 0.45
 w_clip    = 0.30
 w_vlm     = 0.25
 default_threshold = 0.40
@@ -349,6 +381,12 @@ min_cos_visual   = 0.55
 # genuinely-close set on broad queries without touching precise ones
 # (caption-as-query recall@1 is 100% with or without it).
 rel_margin       = 0.08
+# Moments - KNN over audio/video segment vectors (spec 18). NOT measured on
+# a real corpus yet: 0.50 sits just under the image floor because cross-
+# modal (text -> audio) cosines run lower than text -> image in this space.
+# Calibrate with a few known recordings before trusting it.
+w_moment         = 1.00
+min_cos_moment   = 0.50
 
 [graph]
 seed_top_k         = 8

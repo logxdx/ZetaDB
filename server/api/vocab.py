@@ -17,7 +17,7 @@ router = APIRouter(prefix="/api", tags=["vocab"])
 @router.get("/vocab")
 def list_vocab(state: str = "active", limit: int = 500) -> dict:
     rows = reader().execute(
-        "SELECT v.id, v.term, v.kind, v.joytag_alias, v.threshold, v.state, "
+        "SELECT v.id, v.term, v.kind, v.eye_alias, v.threshold, v.state, "
         "v.clip_mu, v.clip_sigma, v.accept_count, v.reject_count, "
         "(SELECT count(*) FROM item_tags it WHERE it.term_id = v.id AND it.state='accepted') AS n "
         "FROM vocab_terms v WHERE v.state = ? ORDER BY n DESC, v.term LIMIT ?",

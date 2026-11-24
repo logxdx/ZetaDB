@@ -3,6 +3,10 @@
 Hash, dedupe, sniff, thumbnail, perceptual hash. The item row is written
 here and becomes visible in the UI immediately with status='processing';
 everything else streams in later (spec 4.2).
+
+Audio and video are probed with ffprobe and get a thumbnail (a poster frame,
+or a drawn waveform); their windows are cut and embedded later, in the media
+stage, under a GPU lease.
 """
 from __future__ import annotations
 
@@ -17,6 +21,7 @@ from pathlib import Path
 from PIL import Image, ImageOps
 
 from server.config import load
+from server.ingest import media as M
 from server.ingest.hashing import content_hash, dhash, text_hash
 from server.db.writer import writer
 
@@ -130,6 +135,68 @@ def ingest_note(body: str, *, title: str | None = None, source: str = "compose")
         return IntakeResult(item_id, created=True)
 
     return writer.submit(work)
+
+
+def ingest_media(path: Path, source: str, *, title: str | None = None) -> IntakeResult:
+    """An audio or video file. Probed and thumbnailed here; segmented and
+    embedded by the media stage, which it is queued for."""
+    cfg = load()
+    if not M.have_ffmpeg():
+        raise RuntimeError("audio/video need ffmpeg and ffprobe on PATH")
+    kind = "video" if M.is_video(path) else "audio"
+    pr = M.probe(path)
+    if kind == "video" and not pr.has_video:
+        kind = "audio"              # an .mp4 holding only sound
+    if kind == "audio" and not pr.has_audio:
+        raise ValueError(f"{path.name}: no audio stream")
+    digest = content_hash(path)
+
+    def work(conn: sqlite3.Connection) -> IntakeResult:
+        existing = conn.execute(
+            "SELECT id FROM items WHERE content_hash = ?", (digest,)).fetchone()
+        if existing:
+            conn.execute(
+                "UPDATE items SET source_path = COALESCE(source_path || char(10) || ?, ?), "
+                "updated_at = ? WHERE id = ?",
+                (str(path), str(path), int(time.time()), existing["id"]))
+            return IntakeResult(int(existing["id"]), created=False,
+                                duplicate_of=int(existing["id"]))
+        blob_dir = cfg.path("paths.blobs") / digest[:2]
+        blob_dir.mkdir(parents=True, exist_ok=True)
+        blob = blob_dir / f"{digest}{path.suffix.lower()}"
+        if not blob.exists():
+            shutil.copy2(path, blob)
+        thumb = cfg.path("paths.thumbs") / digest[:2] / f"{digest}.webp"
+        w, h = pr.width, pr.height
+        try:
+            if kind == "video":
+                w, h = M.video_poster(blob, pr, thumb, THUMB_LONG_EDGE)
+            else:
+                M.audio_waveform(blob, pr.duration, thumb)
+        except Exception:
+            log.warning("thumbnail failed for %s", path, exc_info=True)
+            thumb = None
+        now = int(time.time())
+        root = cfg.path("paths.data")
+        cur = conn.execute(
+            "INSERT INTO items(kind,status,title,blob_path,thumb_path,mime,width,height,"
+            "bytes,duration,content_hash,source,source_path,created_at,updated_at) "
+            "VALUES (?,'processing',?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (kind, title or path.stem, str(blob.relative_to(root)),
+             str(thumb.relative_to(root)) if thumb else None,
+             mimetypes.guess_type(path.name)[0] or "application/octet-stream",
+             w if kind == "video" else None, h if kind == "video" else None,
+             blob.stat().st_size, pr.duration, digest, source, str(path), now, now))
+        item_id = int(cur.lastrowid)
+        conn.execute("INSERT INTO ingest_queue(item_id, stage, enqueued_at) VALUES (?,'media',?)",
+                     (item_id, now))
+        return IntakeResult(item_id, created=True)
+
+    return writer.submit(work)
+
+
+def is_media(path: Path) -> bool:
+    return M.is_audio(path) or M.is_video(path)
 
 
 def is_image(path: Path) -> bool:

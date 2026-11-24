@@ -1,8 +1,8 @@
 """PP-OCRv6 detection + recognition over ONNX Runtime.
 
-Backend order is TensorRT, then CUDA, then CPU (spec 5). ORT is the default
-until TRT engines are built and validated; the chosen provider is reported
-by /api/health so a silent fall back to CPU is visible.
+Backend order is TensorRT, then CUDA, then CPU (spec 5), decided by the
+model engine (server.engine) like every other ONNX model; the chosen provider
+is reported by /api/health so a silent fall back to CPU is visible.
 
 Post-process parameters and the 18708-entry character dictionary come from
 the model's own inference.yml rather than being hardcoded.
@@ -16,6 +16,8 @@ from pathlib import Path
 import numpy as np
 
 from server.config import load
+from server.engine import ModelSpec, Profile, max_batch, register_profile, session
+from server.engine.core import engine as model_engine
 from server.layout.types import TextBox
 
 log = logging.getLogger(__name__)
@@ -45,56 +47,15 @@ _DET_STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
 #      than one wide one. ORT's TRT EP exposes a single profile, so the
 #      equivalent here is to keep the range tight around the width buckets
 #      we actually feed it.
-TRT_PROFILES = {
-    "ppocr_det": {"min": "x:1x3x320x320", "opt": "x:1x3x960x960", "max": "x:1x3x960x960"},
-    "ppocr_rec": {"min": "x:1x3x48x64", "opt": "x:8x3x48x320", "max": "x:8x3x48x512"},
-}
+register_profile("ppocr_det", Profile(min="x:1x3x320x320", opt="x:1x3x960x960",
+                                     max="x:1x3x960x960"))
+register_profile("ppocr_rec", Profile(min="x:1x3x48x64", opt="x:8x3x48x320",
+                                     max="x:8x3x48x512"))
 
 
 def trt_max_batch(model_key: str) -> int:
     """Max batch the model's TensorRT profile was built for."""
-    prof = TRT_PROFILES.get(model_key)
-    if not prof:
-        return 1 << 30
-    # "x:8x3x48x512" -> 8
-    return int(prof["max"].split(":")[1].split("x")[0])
-
-
-def _providers(pref: str, model_key: str | None = None, int8: bool = False) -> list:
-    """Provider chain for one model.
-
-    FP16 is the production precision for OCR on TensorRT, matching
-    TurboOCR. INT8 is enabled only when the graph is actually QDQ, and for
-    recognition it is not used at all: it cost more than half the text
-    (spec 5.1). FP16 keeps the accuracy and still gives TensorRT's 3-5x.
-    """
-    import onnxruntime as ort
-    have = set(ort.get_available_providers())
-    chain: list = []
-    if pref in ("auto", "tensorrt") and "TensorrtExecutionProvider" in have:
-        cache = load().path("paths.models") / "trt"
-        cache.mkdir(parents=True, exist_ok=True)
-        opts = {
-            "trt_fp16_enable": True,
-            "trt_int8_enable": int8,
-            "trt_engine_cache_enable": True,
-            "trt_engine_cache_path": str(cache),
-            "trt_timing_cache_enable": True,
-            # TurboOCR reports level 3 cutting build time 3-5x for a small
-            # speed regression. Engine builds run into the tens of minutes
-            # on a laptop GPU, so that is the right trade here.
-            "trt_builder_optimization_level": load().get("ocr.trt_opt_level", 3),
-        }
-        prof = TRT_PROFILES.get(model_key or "")
-        if prof:
-            opts["trt_profile_min_shapes"] = prof["min"]
-            opts["trt_profile_opt_shapes"] = prof["opt"]
-            opts["trt_profile_max_shapes"] = prof["max"]
-        chain.append(("TensorrtExecutionProvider", opts))
-    if pref in ("auto", "tensorrt", "onnx-cuda") and "CUDAExecutionProvider" in have:
-        chain.append("CUDAExecutionProvider")
-    chain.append("CPUExecutionProvider")
-    return chain
+    return max_batch(model_key)
 
 
 @dataclass
@@ -127,22 +88,21 @@ class PPOCR:
         self.provider = "unavailable"
         self.det_post = {"thresh": 0.2, "box_thresh": 0.45,
                          "unclip_ratio": 1.4, "max_candidates": 3000}
+        model_engine.register(ModelSpec(
+            name="ppocr", pool="A", backend="tensorrt", unload=self.unload,
+            provider=lambda: self.provider, loaded=lambda: self._det is not None))
 
     # ------------------------------------------------------------- lifecycle
 
     def load_models(self) -> None:
         if self._det is not None or not self.available:
             return
-        import onnxruntime as ort
         import yaml
 
-        so = ort.SessionOptions()
-        so.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
-        so.log_severity_level = 3
         default = self.cfg.get("ocr.backend", "auto")
-        self._det = self._session(str(self.det_path), so,
+        self._det = self._session(str(self.det_path), None,
                                   self.cfg.get("ocr.det_backend", default), "ppocr_det")
-        self._rec = self._session(str(self.rec_path), so,
+        self._rec = self._session(str(self.rec_path), None,
                                   self.cfg.get("ocr.rec_backend", default), "ppocr_rec")
         self.provider = self._det.get_providers()[0]
         self.rec_provider = self._rec.get_providers()[0]
@@ -171,32 +131,10 @@ class PPOCR:
         self._det = self._rec = None
 
     def _session(self, path: str, so, pref: str, key: str):
-        """Build a session, degrading one provider at a time.
-
-        ORT usually falls back on its own when an EP cannot be registered,
-        but a TensorRT *engine build* failure raises instead - and the two
-        PP-OCR graphs do not behave alike: detection builds an INT8 engine
-        fine, recognition fails with "failed to create engine from network".
-        A per-session fallback keeps one model's TRT failure from taking OCR
-        down with it.
-        """
-        import onnxruntime as ort
-        int8 = "int8" in path
-        attempts = [(pref, "requested")]
-        if pref in ("auto", "tensorrt"):
-            attempts.append(("onnx-cuda", "CUDA after TensorRT failed"))
-        attempts.append(("onnx-cpu", "CPU last resort"))
-        last: Exception | None = None
-        for backend, why in attempts:
-            try:
-                sess = ort.InferenceSession(path, so, providers=_providers(backend, key, int8))
-                if why != "requested":
-                    log.warning("%s: %s", key, why)
-                return sess
-            except Exception as exc:
-                last = exc
-                log.warning("%s: %s backend unavailable (%s)", key, backend, str(exc)[:120])
-        raise RuntimeError(f"no usable backend for {key}") from last
+        """TensorRT FP16 -> CUDA -> CPU, degrading per session, via the
+        engine (spec 5.1). Recognition's TRT build can fail where detection's
+        succeeds, and one model's failure must not take OCR down with it."""
+        return session(path, key, pref)
 
     # ------------------------------------------------------------- detection
 
@@ -287,7 +225,7 @@ class PPOCR:
         # number of crops, and a batch of 9 against a profile built for
         # [1..8] fails at RUN time with "does not satisfy any optimization
         # profiles" - which the per-session fallback then masks by quietly
-        # dropping to the CUDA EP. Derived from TRT_PROFILES so the two
+        # dropping to the CUDA EP. Derived from the registered engine profile so the two
         # cannot drift apart.
         max_b = trt_max_batch("ppocr_rec") if "Tensorrt" in self.rec_provider else len(crops)
         for bucket, idxs in groups.items():

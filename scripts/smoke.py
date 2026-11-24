@@ -48,7 +48,7 @@ def main() -> int:
         print(f"{FAIL} server unreachable — {exc}")
         return 1
     check("GET /api/health", True, f"{h['db']['counts']['items']} items")
-    check("  health shape", not keys(h, "host", "db", "gpu", "arbiter", "models"))
+    check("  health shape", not keys(h, "host", "db", "gpu", "engine", "models"))
     if h.get("gpu"):
         g = h["gpu"]
         check("  gpu within budget", g["used_mb"] < g["budget_mb"],

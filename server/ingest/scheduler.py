@@ -16,7 +16,7 @@ from collections.abc import Callable
 from server.config import load
 from server.db.conn import reader
 from server.db.writer import writer
-from server.ingest.arbiter import arbiter
+from server.engine.core import engine as model_engine
 from server.ingest.events import hub
 
 log = logging.getLogger(__name__)
@@ -24,7 +24,11 @@ log = logging.getLogger(__name__)
 # stage -> (next stage, pool or None for CPU)
 PIPELINE: dict[str, tuple[str | None, str | None]] = {
     "ocr":        ("layout",     "A"),
-    "layout":     ("tag_visual", None),
+    "layout":     ("media",      None),
+    # Audio and video enter here: windows are cut and embedded with the EG2
+    # vision and audio encoders, so this needs the pool A lease. Images pass
+    # straight through (the handler ignores them).
+    "media":      ("tag_visual", "A"),
     "tag_visual": ("caption",    "A"),
     "caption":    ("extract",    "B"),
     "extract":    ("embed",      None),
@@ -87,7 +91,7 @@ class Scheduler:
                 if ids:
                     worked = True
                     self._drain(stage, ids)
-            arbiter.sweep_idle()
+            model_engine.sweep_idle()
             if not worked:
                 self._wake.wait(timeout=2.0)
                 self._wake.clear()
@@ -107,7 +111,7 @@ class Scheduler:
         try:
             if handler is not None:
                 if pool:
-                    lease = arbiter.lease(pool, model=stage)
+                    lease = model_engine.lease(pool, model=stage)
                 handler(ids)
             elif stage not in ("finalize",):
                 log.debug("stage %s has no handler; passing %d item(s) through", stage, len(ids))
@@ -116,7 +120,7 @@ class Scheduler:
             self._record_errors(stage, ids, exc)
         finally:
             if lease is not None:
-                arbiter.release(lease)
+                model_engine.release(lease)
             self._current = None
 
         self._advance(stage, ids, nxt)

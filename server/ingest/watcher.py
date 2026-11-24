@@ -15,7 +15,8 @@ from watchdog.observers import Observer
 
 from server.config import load
 from server.ingest.events import hub
-from server.ingest.stages.intake import ingest_image, ingest_text_file, is_image, is_text
+from server.ingest.stages.intake import (ingest_image, ingest_media, ingest_text_file,
+                                         is_image, is_media, is_text)
 
 log = logging.getLogger(__name__)
 SETTLE_POLL_S = 0.5
@@ -75,7 +76,7 @@ class Watcher:
             self._observer.join(timeout=3)
 
     def _enqueue(self, path: Path) -> None:
-        if is_image(path) or is_text(path):
+        if is_image(path) or is_text(path) or is_media(path):
             with self._lock:
                 self._pending.add(path)
 
@@ -99,8 +100,12 @@ class Watcher:
                     self._pending.discard(p)
                 sizes.pop(p, None)
                 try:
-                    r = ingest_text_file(p, source="watch") if is_text(p) \
-                        else ingest_image(p, source="watch")
+                    if is_text(p):
+                        r = ingest_text_file(p, source="watch")
+                    elif is_media(p):
+                        r = ingest_media(p, source="watch")
+                    else:
+                        r = ingest_image(p, source="watch")
                     if r.created:
                         hub.emit("item.created", {"id": r.item_id, "near_dup_of": r.near_dup_of})
                         log.info("ingested %s -> item %d", p.name, r.item_id)
