@@ -37,14 +37,7 @@
   const TOP_CLEAR = 140;                    // the search bar and its stats line
   const TARGET = 300;                       // the width a column wants to be
   const mod = (n: number, m: number) => ((n % m) + m) % m;
-  const gcd = (a: number, b: number): number => (b ? gcd(b, a % b) : a);
-  /* A stride that visits every item before repeating. Rotating columns by
-     a fixed 7 and stepping by 3 shared factors with the list length: 14
-     results drew columns 1 and 3 identical, 12 put 4 items in a column. */
-  const coprime = (want: number, n: number) => {
-    for (let k = want; k < want + n + 1; k++) if (gcd(k, n) === 1) return k % n || 1;
-    return 1;
-  };
+
 
   /* A note's first line is set as a lede so a typed thought carries the
      same weight as a photograph in the next column — the display face has
@@ -165,11 +158,17 @@
 
       const cells: { item: Item; y: number; h: number }[] = [];
       let cy = 0;
+      /* Row-major across one screen of columns, so the first screen reads
+         in order - best (or newest) top-left, then along the row - and each
+         further screen-width starts a fresh block. Rotating columns by 7
+         and stepping by 3 shared factors with the list length and drew
+         whole columns (or diagonals) of the same tiles. */
       const n = items.length;
-      const start = mod(c * coprime(7, n), n);
-      const step = coprime(3, n);
-      for (let i = 0; i < Math.min(n, 10); i++) {
-        const item = items[mod(start + i * step, n)];
+      const depth = Math.max(1, Math.min(10, Math.ceil(n / columns)));
+      const block = Math.floor(c / columns) * columns * depth;
+      const lane = mod(c, columns);
+      for (let i = 0; i < depth; i++) {
+        const item = items[mod(block + i * columns + lane, n)];
         const h = Math.round(item.kind !== "note"
           ? w * ratioOf(item) : Math.max(150, w * 0.72));
         cells.push({ item, y: cy, h });
