@@ -34,7 +34,7 @@ moment. Single-user, local-only. (Formerly *iwashere*.)
 uv run -m server.app                    # backend + built SPA on :8777
 cd web && npm run dev                   # hot-reload UI on :5173, proxies /api
 
-uv run --with pytest pytest tests/ -q   # 68 unit + regression tests, ~1s, no GPU
+uv run --with pytest pytest tests/ -q   # 74 unit + regression tests, ~1s, no GPU
 uv run scripts/smoke.py                 # 25 API contract checks, needs a server
 cd web && npm run build && npm run check
 ```

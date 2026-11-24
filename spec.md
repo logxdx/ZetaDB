@@ -2000,6 +2000,30 @@ replaces it. It is a hybrid reasoner, and under the GBNF grammar thinking ON ret
 2.6 s. It has not been through the §17.9 caption-as-query bake-off; `vlm_bakeoff.py` has it as
 `lfm3_vl_2b`.
 
+**A fresh library ([M8], the demo library in `docs/DEMO.md`).** Building one from nothing found
+what an upgraded library never exercises:
+- The vocabulary was never seeded on a new database, so nothing was ever tagged. Startup now
+  seeds when there are no active terms.
+- Nothing calibrated CLIP for a new library. tag_visual calibrates once 8+ image vectors exist
+  and re-scores everything tagged on the fallback until then, once.
+- A re-score only ever added tags; one it no longer supports is now retracted (never a
+  rejection, a human tag, or a captioner proposal).
+- Eye's scene tags are photo-trained and misfire on graphics (a bar chart got *food*, *person*
+  and *chair* at 0.67–0.92 against EG2's 0.01–0.03). They count only when Eye's own type head
+  says the image is a photograph.
+- The CUDA soname links went dangling when the checkout moved, so cuDNN failed to load after the
+  folder rename; they are re-pointed on start.
+- Canvas: a short result list wrapped into a wall of repeats, the best hit sat under the search
+  bar, and column strides sharing a factor with the list length drew diagonals of the same
+  tiles. Audio tiles are now sheets with a theme-coloured waveform; posters are the best of 7
+  frames.
+
+On that library (16 photos, 10 documents, 12 notes, 12 recordings, 11 clips, ~50 min of media):
+ingest ~7 min with a 3.2 GB foreign process on the card (the audio encoder fell back to CPU);
+*"why we go to the moon"* → the Kennedy speech at 8:20, *"a dragon"* → *Sintel* at 5:20,
+*"what did I spend at the cafe"* → the receipt, *"rocket launch"*, *"northern lights"*,
+*"waterfall"*, *"cat"* each top-1.
+
 **Still owed.**
 - `min_cos_moment` (0.50) and `dim_range` (0.15) on *real* recordings. The synthetic clips put
   the best query cosine at 0.62–0.69 and the median at 0.58–0.66, a band too narrow to tune on.
