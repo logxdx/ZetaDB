@@ -90,8 +90,11 @@ def _reseed_vocab_if_flagged() -> None:
         return
     try:
         V.seed_from_yaml()
+        # Any term whose prompt changed lost its calibration in the seed;
+        # recompute every term's from the stored image vectors (CPU only).
+        V.calibrate_clip()
         writer.submit(lambda c: c.execute("DELETE FROM meta WHERE key = 'vocab_reseed'"))
-        log.info("vocabulary re-seeded with Eye aliases")
+        log.info("vocabulary re-seeded with Eye aliases and recalibrated")
     except Exception:
         log.exception("vocabulary re-seed failed; run POST /api/vocab/seed")
 

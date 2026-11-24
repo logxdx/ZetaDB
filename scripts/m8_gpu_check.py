@@ -118,6 +118,13 @@ def eye_vs_joytag(conn: sqlite3.Connection, before: Path | None, report: dict) -
                 "SELECT t.item_id, v.term FROM item_tags t JOIN vocab_terms v ON v.id=t.term_id "
                 "WHERE t.state='accepted' AND t.source='machine'"):
             old.setdefault(iid, set()).add(term)
+    # Decisions a person made stand: production never re-accepts a rejected
+    # tag or touches a human one (tag_visual.TAG_UPSERT), so neither does this.
+    decided: dict[int, set[str]] = {}
+    for iid, term in conn.execute(
+            "SELECT t.item_id, v.term FROM item_tags t JOIN vocab_terms v ON v.id=t.term_id "
+            "WHERE t.state='rejected' OR t.source='human'"):
+        decided.setdefault(iid, set()).add(term)
     eye, e = eye_engine(), eg2_engine()
     with model_engine.use("A", "m8-check"):
         tvec = {t.id: _unpack(v) for t, v in zip(
@@ -131,6 +138,8 @@ def eye_vs_joytag(conn: sqlite3.Connection, before: Path | None, report: dict) -
             new = set()
             for t in terms:
                 if t.requires_text and not has_text:
+                    continue
+                if t.term in decided.get(r["id"], set()):
                     continue
                 ey = scores.get(t.eye_alias) if t.eye_alias else None
                 c = V.clip_score(t, float(_unpack(iv) @ tvec[t.id])) if iv else None

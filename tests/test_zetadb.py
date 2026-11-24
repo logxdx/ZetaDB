@@ -310,3 +310,49 @@ def test_match_strength_dims_by_distance_from_the_best():
     assert far.match == 0.0
     assert word.match >= 0.6
     assert tag.match == pytest.approx(0.5) and other_tag.match == 1.0
+
+
+# ------------------------------------------------------------ tag authority
+
+def test_retagging_never_overturns_a_rejection_or_a_human_tag(tmp_path):
+    """[M8] the v4 migration re-tags every image; a tag the user rejected in
+    review must stay rejected, and a human tag must stay human."""
+    from server.db.conn import init_db
+    from server.ingest.stages.tag_visual import TAG_UPSERT
+
+    conn = init_db(tmp_path / "t.db")
+    iid = conn.execute("INSERT INTO items(kind, status, source, created_at, updated_at) "
+                       "VALUES ('image','ready','upload',0,0)").lastrowid
+    tids = [conn.execute("INSERT INTO vocab_terms(term, created_at) VALUES (?,0)",
+                         (t,)).lastrowid for t in ("rejected", "human", "machine")]
+    conn.execute("INSERT INTO item_tags VALUES (?,?,0.5,'machine','rejected',0)", (iid, tids[0]))
+    conn.execute("INSERT INTO item_tags VALUES (?,?,1.0,'human','accepted',0)", (iid, tids[1]))
+    conn.execute("INSERT INTO item_tags VALUES (?,?,0.3,'machine','pending',0)", (iid, tids[2]))
+    for tid in tids:
+        conn.execute(TAG_UPSERT, (iid, tid, 0.95, "machine", "accepted", 1))
+    got = {r["term_id"]: (r["source"], r["state"]) for r in conn.execute(
+        "SELECT term_id, source, state FROM item_tags")}
+    assert got[tids[0]] == ("machine", "rejected")
+    assert got[tids[1]] == ("human", "accepted")
+    assert got[tids[2]] == ("machine", "accepted")
+
+
+def test_reprompting_a_term_clears_its_calibration(tmp_path, monkeypatch):
+    """A term's mu/sigma describe ITS prompt's cosines; a new prompt must not
+    be scored against them ([M8]: indoors/night/portrait were)."""
+    import server.search.vocab as V
+    from server.db.conn import init_db
+
+    db = tmp_path / "v.db"
+    conn = init_db(db)
+    conn.execute("INSERT INTO vocab_terms(term, prompt_template, clip_mu, clip_sigma, created_at) "
+                 "VALUES ('night','a photo of {term}',0.56,0.03,0), "
+                 "('tree','a photo of {term}',0.57,0.04,0)")
+    seed = tmp_path / "seed.yaml"
+    seed.write_text("- {term: night, prompt: 'a photo taken at night'}\n- {term: tree}\n")
+    monkeypatch.setattr(V.writer, "submit", lambda fn, *a, **k: fn(conn, *a, **k))
+    V.seed_from_yaml(seed)
+    rows = {r["term"]: (r["clip_mu"], r["prompt_template"]) for r in conn.execute(
+        "SELECT term, clip_mu, prompt_template FROM vocab_terms")}
+    assert rows["night"] == (None, "a photo taken at night")
+    assert rows["tree"][0] == pytest.approx(0.57)          # unchanged prompt keeps it

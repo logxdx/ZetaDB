@@ -44,6 +44,18 @@ log = logging.getLogger(__name__)
 
 MAX_KEYFRAMES = 3
 
+# Machine tags never override a person. A human tag is terminal (spec 7.6),
+# and so is a REJECTION: the review queue rejects by setting state='rejected'
+# on the machine row, and before [M8] a re-run quietly flipped those back to
+# accepted - harmless while re-runs were rare, not once the v4 migration
+# re-tags every image with Eye.
+TAG_UPSERT = (
+    "INSERT INTO item_tags(item_id, term_id, confidence, source, state, created_at) "
+    "VALUES (?,?,?,?,?,?) ON CONFLICT(item_id, term_id) DO UPDATE SET "
+    "confidence=excluded.confidence, state=excluded.state "
+    "WHERE item_tags.source = 'machine' AND item_tags.state != 'rejected'"
+)
+
 _term_vecs: dict[int, np.ndarray] = {}
 _term_vec_stamp = 0.0
 
@@ -197,12 +209,7 @@ def run(item_ids: list[int]) -> None:
                 "ON CONFLICT(item_id, term_id) DO UPDATE SET "
                 "eye=excluded.eye, clip=excluded.clip", row)
         for row in tag_rows:
-            # Human tags are terminal: never overwritten by a re-run (spec 7.6).
-            conn2.execute(
-                "INSERT INTO item_tags(item_id, term_id, confidence, source, state, created_at) "
-                "VALUES (?,?,?,?,?,?) ON CONFLICT(item_id, term_id) DO UPDATE SET "
-                "confidence=excluded.confidence, state=excluded.state "
-                "WHERE item_tags.source = 'machine'", row)
+            conn2.execute(TAG_UPSERT, row)
     writer.submit(work)
 
     acc = sum(1 for r in tag_rows if r[4] == "accepted")

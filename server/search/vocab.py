@@ -67,7 +67,18 @@ def seed_from_yaml(path: Path | None = None) -> int:
             cur = conn.execute(
                 "INSERT INTO vocab_terms(term, kind, eye_alias, prompt_template, "
                 "threshold, requires_text, state, created_at) VALUES (?,?,?,?,?,?, 'active', ?) "
-                "ON CONFLICT(term) DO UPDATE SET eye_alias = excluded.eye_alias, "
+                # A changed prompt makes the stored calibration describe a
+                # different text vector: the cosine band moves and every
+                # z-score is off. [M8] re-prompting indoors/night/portrait
+                # against their old mu/sigma lifted wrong tags over the
+                # threshold. So a prompt change clears it; SQLite evaluates
+                # every SET against the OLD row, so the comparison is valid.
+                "ON CONFLICT(term) DO UPDATE SET "
+                "clip_mu = CASE WHEN vocab_terms.prompt_template IS excluded.prompt_template "
+                "THEN vocab_terms.clip_mu ELSE NULL END, "
+                "clip_sigma = CASE WHEN vocab_terms.prompt_template IS excluded.prompt_template "
+                "THEN vocab_terms.clip_sigma ELSE NULL END, "
+                "eye_alias = excluded.eye_alias, "
                 "prompt_template = excluded.prompt_template, kind = excluded.kind, "
                 "requires_text = excluded.requires_text",
                 (term, e.get("kind"), e.get("eye"),
