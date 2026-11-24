@@ -129,7 +129,7 @@
              onseeked={() => (now = player?.currentTime ?? 0)}></video>
     {:else if item.kind === "audio" && item.file_url}
       <div class="well">
-        {#if item.thumb_url}<img class="wave" src={item.thumb_url} alt="" />{/if}
+        {#if item.thumb_url}<span class="wave" style:--wave="url('{item.thumb_url}')" aria-hidden="true"></span>{/if}
         <!-- svelte-ignore a11y_media_has_caption -->
         <audio bind:this={player} src={item.file_url} controls preload="metadata"
                onloadedmetadata={ready} ontimeupdate={() => (now = player?.currentTime ?? 0)}
@@ -237,7 +237,9 @@
                  each captioned "semantic 0.71" reads as debug output. -->
             <button class="rel" onclick={() => onopen(r.id)}
                     title="{r.title ?? ''}{r.weight ? ` · ${r.link} ${r.weight}` : ''}">
-              {#if r.thumb_url}
+              {#if r.thumb_url && r.kind === "audio"}
+                <span class="relwave" style:--wave="url('{r.thumb_url}')" aria-hidden="true"></span>
+              {:else if r.thumb_url}
                 <img src={r.thumb_url} alt={r.title ?? ""} />
               {:else}
                 <span class="reltext">{r.preview.slice(0, 70) || r.kind}</span>
@@ -311,10 +313,15 @@
     background: var(--well); padding: 16px;
     display: flex; flex-direction: column; gap: 12px;
   }
-  .wave {
-    width: 100%; max-height: 160px; object-fit: contain; display: block;
-    border-radius: var(--r-link);
+  /* The waveform file is a mask (transparent ground, opaque bars); the
+     theme's muted text colour paints it, so it reads in light and dark. */
+  .wave, .relwave {
+    display: block; background: var(--muted);
+    -webkit-mask: var(--wave) center / contain no-repeat;
+    mask: var(--wave) center / contain no-repeat;
   }
+  .wave { width: 100%; height: 96px; margin-bottom: 12px; }
+  .relwave { width: 100%; height: 100%; -webkit-mask-size: 80% 60%; mask-size: 80% 60%; }
   audio { width: 100%; display: block; }
 
   .credit { margin: -8px 0 0; color: var(--muted); }

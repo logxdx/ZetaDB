@@ -458,6 +458,19 @@ def test_tag_visual_does_not_rescore_when_calibration_is_skipped(monkeypatch):
     assert calls == [[1]]
 
 
+def test_poster_prefers_a_lit_detailed_frame():
+    """A night launch / fade must lose to a lit scene ([M8] Sintel's poster
+    was a grey fade, Artemis I's a black sky)."""
+    import numpy as np
+
+    from server.ingest.media import poster_score
+    rng = np.random.default_rng(0)
+    black = rng.normal(12, 6, (90, 160)).clip(0, 255)
+    fade = np.full((90, 160), 128.0)
+    lit = rng.normal(120, 55, (90, 160)).clip(0, 255)
+    assert poster_score(lit) > poster_score(fade) > poster_score(black)
+
+
 def test_eye_scene_tags_only_count_on_photographs():
     from server.ingest.stages.tag_visual import eye_scenes_apply
     assert eye_scenes_apply({"photo": 0.9, "screenshot": 0.1, "food": 0.8})

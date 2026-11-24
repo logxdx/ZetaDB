@@ -217,16 +217,46 @@ def video_windows(path: Path, pr: Probe) -> list[FrameWindow]:
 
 # --------------------------------------------------------------- thumbnails
 
-def video_poster(path: Path, pr: Probe, dest: Path, long_edge: int) -> tuple[int, int]:
-    """A frame 10% in (past black lead-in frames) as the item's thumbnail."""
-    from PIL import Image
-    t = min(max(pr.duration * 0.1, 0.0), max(pr.duration - 0.1, 0.0))
-    raw = subprocess.run(
-        ["ffmpeg", "-v", "error", "-nostdin", "-ss", f"{t:.3f}", "-i", str(path),
-         "-frames:v", "1", "-f", "image2pipe", "-vcodec", "png", "-"],
-        capture_output=True, timeout=120, check=True).stdout
+def poster_score(luma: np.ndarray) -> float:
+    """How good a frame is as a poster: detail (contrast) and light. A night
+    launch, a fade or a title card scores low; a lit scene scores high."""
+    mean, std = float(luma.mean()), float(luma.std())
+    score = std + 0.35 * min(mean, 150.0)
+    if mean < 40 or mean > 235:        # near black or blown out
+        score *= 0.3
+    return score
+
+
+def video_poster(path: Path, pr: Probe, dest: Path, long_edge: int,
+                 candidates: int = 7) -> tuple[int, int]:
+    """The item's thumbnail: the best-lit, most detailed of a few frames
+    spread over 10-85% of the film. One fixed frame at 10% gave a grey fade
+    for an animated film and a black sky for a night launch."""
     import io
-    with Image.open(io.BytesIO(raw)) as im:
+
+    from PIL import Image
+    best: tuple[float, bytes] | None = None
+    d = max(pr.duration, 0.0)
+    for k in range(candidates):
+        frac = 0.10 + 0.75 * k / max(1, candidates - 1)
+        t = min(d * frac, max(d - 0.1, 0.0))
+        raw = subprocess.run(
+            ["ffmpeg", "-v", "error", "-nostdin", "-ss", f"{t:.3f}", "-i", str(path),
+             "-frames:v", "1", "-f", "image2pipe", "-vcodec", "png", "-"],
+            capture_output=True, timeout=120).stdout
+        if not raw:
+            continue
+        with Image.open(io.BytesIO(raw)) as im:
+            small = im.convert("L")
+            small.thumbnail((160, 160))
+            s = poster_score(np.asarray(small, dtype=np.float32))
+        if best is None or s > best[0]:
+            best = (s, raw)
+        if d < 2.0:
+            break
+    if best is None:
+        raise RuntimeError(f"no frame decodable from {path.name}")
+    with Image.open(io.BytesIO(best[1])) as im:
         im = im.convert("RGB")
         size = im.size
         im.thumbnail((long_edge, long_edge), Image.Resampling.LANCZOS)
@@ -235,8 +265,8 @@ def video_poster(path: Path, pr: Probe, dest: Path, long_edge: int) -> tuple[int
     return size
 
 
-def audio_waveform(path: Path, duration: float, dest: Path, width: int = 400,
-                   height: int = 160) -> None:
+def audio_waveform(path: Path, duration: float, dest: Path, width: int = 480,
+                   height: int = 120) -> None:
     """A waveform card as the audio item's thumbnail, drawn from a coarse
     peak envelope of the whole file (decoded at 4 kHz to stay cheap)."""
     from PIL import Image, ImageDraw
@@ -252,15 +282,17 @@ def audio_waveform(path: Path, duration: float, dest: Path, width: int = 400,
         chunks = np.array_split(a, bars)
         env = np.array([float(c.max()) if c.size else 0.0 for c in chunks])
         env = env / (env.max() or 1.0)
-    im = Image.new("RGB", (width, height), (29, 29, 31))
+    # Transparent ground, opaque bars: the UI uses this as a MASK and paints
+    # it with the theme's own colour, so one file serves light and dark.
+    im = Image.new("RGBA", (width, height), (0, 0, 0, 0))
     d = ImageDraw.Draw(im)
-    pad, gap = 20, 2
+    pad, gap = 0, 3
     bw = (width - 2 * pad - gap * (bars - 1)) / bars
     mid = height / 2
     for i, v in enumerate(env):
         x0 = pad + i * (bw + gap)
-        hh = max(2.0, v * (height / 2 - 18))
+        hh = max(bw / 2, v * (height / 2 - 2))
         d.rounded_rectangle([x0, mid - hh, x0 + bw, mid + hh], radius=bw / 2,
-                            fill=(245, 245, 247))
+                            fill=(255, 255, 255, 255))
     dest.parent.mkdir(parents=True, exist_ok=True)
     im.save(dest, "WEBP", quality=85, method=4)

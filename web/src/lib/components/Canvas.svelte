@@ -34,8 +34,17 @@
      its width and reads as a lozenge, and 16px of internal padding leaves
      a note nowhere to breathe. At 1440px this is 4 columns of 336. */
   const GAP = 24;
+  const TOP_CLEAR = 140;                    // the search bar and its stats line
   const TARGET = 300;                       // the width a column wants to be
   const mod = (n: number, m: number) => ((n % m) + m) % m;
+  const gcd = (a: number, b: number): number => (b ? gcd(b, a % b) : a);
+  /* A stride that visits every item before repeating. Rotating columns by
+     a fixed 7 and stepping by 3 shared factors with the list length: 14
+     results drew columns 1 and 3 identical, 12 put 4 items in a column. */
+  const coprime = (want: number, n: number) => {
+    for (let k = want; k < want + n + 1; k++) if (gcd(k, n) === 1) return k % n || 1;
+    return 1;
+  };
 
   /* A note's first line is set as a lede so a typed thought carries the
      same weight as a photograph in the next column — the display face has
@@ -134,7 +143,14 @@
       : (it.moment?.kind === "frames" && it.moment.frame_url) || it.thumb_url;
 
   const ratioOf = (it: Item) =>
-    it.width && it.height ? Math.min(Math.max(it.height / it.width, 0.62), 1.55) : 0.72;
+    it.kind === "audio" ? 0.62
+      : it.width && it.height ? Math.min(Math.max(it.height / it.width, 0.62), 1.55) : 0.72;
+
+  /* "jfk_we_choose_to_go_to_the_moon" -> "Jfk we choose to go to the moon" */
+  const prettyTitle = (it: Item): string => {
+    const s = (it.title ?? "").replace(/\.[a-z0-9]{2,4}$/i, "").replace(/[_-]+/g, " ").trim();
+    return s ? s[0].toUpperCase() + s.slice(1) : "Recording";
+  };
 
   // ---------------------------------------------------------------- library
   function libraryTiles(): Layout {
@@ -149,9 +165,11 @@
 
       const cells: { item: Item; y: number; h: number }[] = [];
       let cy = 0;
-      const start = mod(c * 7, items.length);
-      for (let i = 0; i < Math.min(items.length, 10); i++) {
-        const item = items[mod(start + i * 3, items.length)];
+      const n = items.length;
+      const start = mod(c * coprime(7, n), n);
+      const step = coprime(3, n);
+      for (let i = 0; i < Math.min(n, 10); i++) {
+        const item = items[mod(start + i * step, n)];
         const h = Math.round(item.kind !== "note"
           ? w * ratioOf(item) : Math.max(150, w * 0.72));
         cells.push({ item, y: cy, h });
@@ -231,8 +249,33 @@
     return { tiles: out, extent: inner };
   }
 
+  /* A short list - a search with a handful of answers, or a library that
+     has only just begun - is laid out ONCE, centred, best first. Wrapping
+     two results endlessly drew a wall of the same two tiles, which reads as
+     a glitch rather than an answer. */
+  const FINITE_MAX = 12;
+  const finite = $derived(!orbit && items.length > 0 && items.length <= FINITE_MAX);
+  function finiteTiles(): Layout {
+    const out: Tile[] = [];
+    if (vw <= 0) return { tiles: out, extent: 0 };
+    const cols = Math.max(1, Math.min(columns, items.length));
+    const left = (vw - cols * pitch) / 2 + GAP / 2;
+    const heights: number[] = new Array(cols).fill(0);
+    items.forEach((item, i) => {
+      let col = 0;                      // shortest column; rank 1..cols fill the top row
+      for (let k = 1; k < cols; k++) if (heights[k] < heights[col] - 1) col = k;
+      const h = Math.round(item.kind !== "note"
+        ? colW * ratioOf(item) : Math.max(150, colW * 0.72));
+      out.push({ key: `S:${item.id}`, item, x: left + col * pitch - ox, y: heights[col] - oy,
+                 w: colW, h, rank: i + 1, isFocus: false });
+      heights[col] += h + GAP;
+    });
+    return { tiles: out, extent: Math.max(...heights) };
+  }
+
   // The library is endless, so it has no extent to clamp against.
-  const layout = $derived.by(() => (orbit ? orbitTiles() : libraryTiles()));
+  const layout = $derived.by(() =>
+    orbit ? orbitTiles() : finite ? finiteTiles() : libraryTiles());
   const tiles = $derived(layout.tiles);
 
   $effect(() => {
@@ -247,7 +290,9 @@
   // the whole point is that the focus does not jump.
   $effect(() => {
     items;
-    if (!focusItem) { ox = oy = tx = ty = 0; vx = vy = 0; }
+    // Start below the floating search bar and its stats line, so the best
+    // result - placed first, top-left - is never under them.
+    if (!focusItem) { ox = tx = 0; oy = ty = -TOP_CLEAR; vx = vy = 0; }
   });
 
   /** In orbit, keep the subject reachable: never pan past the outermost
@@ -341,7 +386,7 @@
      is also what you want, since a tile "arriving" while you pan is noise.
      Staggered by rank so the ring blooms outward instead of popping. */
   const enter = (rank: number) =>
-    !orbit || reduced
+    !(orbit || finite) || reduced
       ? { duration: 0 }
       : { duration: 420, delay: Math.min(rank * 26, 520),
           start: 0.3, opacity: 0, easing: cubicOut };
@@ -407,7 +452,15 @@
             out:scale={leave(t)}
             onclick={(e) => tileClick(e, t.item.id)}
             aria-label={label(t.item)}>
-      {#if pic}
+      {#if t.item.kind === "audio"}
+        <!-- A recording has no picture, so it is drawn as a sheet like a
+             note: its name in the display type, and its waveform as a mask
+             filled with the theme's own text colour. -->
+        <span class="note audio" style:--lede="{ledeSize(t.w)}px">
+          <span class="lede">{prettyTitle(t.item)}</span>
+          {#if pic}<span class="wave" style:--wave="url('{pic}')"></span>{/if}
+        </span>
+      {:else if pic}
         <img src={pic} alt={t.item.title ?? ""}
              loading="eager" decoding="async" draggable="false" />
       {:else}
@@ -499,6 +552,22 @@
   .note .rest {
     font-size: var(--fs-sm); line-height: 1.43; letter-spacing: var(--ls-14);
     color: var(--muted); overflow: hidden;
+  }
+  /* The waveform sits above the duration badge; its bars are the mask,
+     the theme's muted text is the paint, so it flips with light/dark. */
+  /* The title never gives way (a clamp that is squeezed by its flex parent
+     cuts a line in half); the waveform takes what is left. */
+  .note.audio { justify-content: space-between; padding-bottom: 44px; }
+  .note.audio .lede {
+    flex: 0 0 auto; font-size: calc(var(--lede, var(--fs-2xl)) * 0.82);
+    display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .note.audio .wave {
+    flex: 1 1 auto; min-height: 22px; max-height: 64px;
+    background: var(--muted);
+    -webkit-mask: var(--wave) center / 100% 100% no-repeat;
+    mask: var(--wave) center / 100% 100% no-repeat;
   }
   /* The subject of an orbit is marked by a 1px ring — used as an outline,
      not as elevation. Nothing on this canvas casts a shadow, and a blue
