@@ -1,4 +1,4 @@
-# iwashere configuration
+# ZetaDB configuration
 # Values marked [M0] were measured on this machine, not estimated.
 
 [server]
@@ -10,7 +10,7 @@ data       = "./data"
 models     = "./data/models"
 blobs      = "./data/blobs"
 thumbs     = "./data/thumbs"
-db         = "./data/iwashere.db"
+db         = "./data/zetadb.db"     # an existing data/iwashere.db is adopted on first start
 watch_dirs = ["~/dump"]
 
 [gpu]
@@ -56,6 +56,9 @@ pool      = "A"
 # other ONNX model.
 role      = "vocab-tag-scoring"
 repo      = "desert-ant-labs/eye"
+# The LiteRT model, its tag calibration, and the licence/notice files that
+# must ship with it. The Core ML package (Apple only) is not fetched.
+file_glob = ["eye.tflite", "eye_meta.json", "README.md", "THIRD_PARTY_NOTICES.md"]
 backend   = "auto"          # TensorRT FP16 -> CUDA -> CPU, via server.engine
 pool      = "A"
 resolution = 384
@@ -132,7 +135,7 @@ max_text_tokens   = 8192
 # Which graph each encoder runs. The int8 graphs are dynamically quantised,
 # which TensorRT cannot run, so the engine sends them to the CUDA EP. Set
 # vision_dtype = "fp16" (and download onnx/vision_encoder_fp16.onnx*) to put
-# the vision encoder on TensorRT FP16 - see spec 18.3: unmeasured here yet.
+# the vision encoder on TensorRT FP16 - see spec 20.2: unmeasured here yet.
 vision_backend = "auto"
 audio_backend  = "auto"
 
@@ -143,7 +146,7 @@ audio_backend  = "auto"
 trt_opt_level = 3
 
 [media]
-# Audio and video are searched by MOMENT (spec 18). EG2's audio front end
+# Audio and video are searched by MOMENT (spec 20). EG2's audio front end
 # truncates at 480 000 samples = 30 s, so longer audio is windowed; video
 # is vision-only frames, so its soundtrack is windowed as audio too.
 audio_window_s    = 30.0
@@ -381,7 +384,7 @@ min_cos_visual   = 0.55
 # genuinely-close set on broad queries without touching precise ones
 # (caption-as-query recall@1 is 100% with or without it).
 rel_margin       = 0.08
-# Moments - KNN over audio/video segment vectors (spec 18). NOT measured on
+# Moments - KNN over audio/video segment vectors (spec 20). NOT measured on
 # a real corpus yet: 0.50 sits just under the image floor because cross-
 # modal (text -> audio) cosines run lower than text -> image in this space.
 # Calibrate with a few known recordings before trusting it.

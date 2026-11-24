@@ -1,7 +1,7 @@
 [project]
-name = "iwashere"
+name = "zetadb"
 version = "0.1.0"
-description = "Local idea dump with hybrid keyword + semantic search over text and images"
+description = "Local multimodal search: notes, images, audio and video, by keyword, by meaning and by moment"
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "fastapi>=0.141",

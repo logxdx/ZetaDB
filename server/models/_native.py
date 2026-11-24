@@ -16,7 +16,7 @@ import re
 import sys
 from pathlib import Path
 
-_GUARD = "IWASHERE_NATIVE_READY"
+_GUARD = "ZETADB_NATIVE_READY"
 # Prefixes, not exact names: cuDNN 9 is a dispatcher that loads siblings
 # (libcudnn_graph, libcudnn_engines_precompiled, ...) and linking only
 # libcudnn.so yields "Invalid handle. Cannot load symbol cudnnCreate".
@@ -46,7 +46,7 @@ def _wheel_lib_dirs() -> list[Path]:
 
 
 def link_dir() -> Path:
-    return Path(sys.prefix) / "lib" / "iwashere-native"
+    return Path(sys.prefix) / "lib" / "zetadb-native"
 
 
 def _build_links() -> Path:

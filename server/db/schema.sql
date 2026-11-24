@@ -192,7 +192,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS vec_items USING vec0(
 
 -- Audio and video are searched by MOMENT. EmbeddingGemma 2 hears only the
 -- first 30 s of an audio input and sees a video as a handful of frames, so
--- long media is cut into windows (spec 18):
+-- long media is cut into windows (spec 20):
 --   kind='sound'   30 s of audio every 25 s - an audio file, or a video's
 --                  soundtrack. Silent windows are skipped.
 --   kind='frames'  a 10 s window of a video, 5 frames, vision only.

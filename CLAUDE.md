@@ -1,12 +1,14 @@
-# iwashere
+# ZetaDB
 
-Local idea dump — screenshots, photos, diagrams and typed notes, auto-tagged
-and searchable by keyword and by meaning. Single-user, local-only.
+Local multimodal archive — screenshots, photos, diagrams, typed notes,
+recordings and video, auto-tagged and searchable by keyword, by meaning and by
+moment. Single-user, local-only. (Formerly *iwashere*.)
 
 - [spec.md](spec.md) — the technical specification, and the record of what was
   measured rather than assumed. Section 17 is the post-mortem of what the first
-  real corpus and the first browser pass found; read it before re-deriving a
-  number.
+  real corpus and the first browser pass found; section 20 is the current state
+  (the model engine, Eye, audio/video). Read them before re-deriving a number.
+- [docs/SETUP.md](docs/SETUP.md) — install, model weights, run, test.
 - [DESIGN.md](DESIGN.md) — the visual system. Every colour pair in it is
   measured against WCAG; do not introduce one that is not.
 
@@ -16,8 +18,12 @@ and searchable by keyword and by meaning. Single-user, local-only.
   long-lived branch; feature branches are deleted once merged.
 - Paths in `config.toml` resolve relative to the repo root, so a git worktree
   gets an empty `data/`. Symlink it (`ln -s ../../../data data`) or the server
-  comes up with no library and no model weights. Note `.gitignore`'s `data/`
-  pattern does not match a *symlink* named `data`.
+  comes up with no library and no model weights. `.gitignore` uses `/data`,
+  which covers the symlink as well as the directory.
+- **Every model registers with the engine** (`server/engine`): a `ModelSpec`
+  with its pool and unload hook, and ONNX sessions only via
+  `server.engine.session()`. A model that does not register is never unloaded
+  when the other pool needs the card.
 - `web/dist` is gitignored. After pulling anything that touches `web/src`,
   rebuild, or you are looking at the old UI. A stale cached bundle has cost real
   debugging time before — see spec §17.8.
@@ -28,7 +34,7 @@ and searchable by keyword and by meaning. Single-user, local-only.
 uv run -m server.app                    # backend + built SPA on :8777
 cd web && npm run dev                   # hot-reload UI on :5173, proxies /api
 
-uv run --with pytest pytest tests/ -q   # 45 unit + regression tests, <1s
+uv run --with pytest pytest tests/ -q   # 64 unit + regression tests, ~1s, no GPU
 uv run scripts/smoke.py                 # 25 API contract checks, needs a server
 cd web && npm run build && npm run check
 ```
@@ -46,6 +52,16 @@ screenshots — CDP round-trips are longer than most transitions, which will tel
 you an animation is missing when it is not.
 
 ## Remaining work
+
+**[M8] Needs the GPU — measure before trusting** (spec §20.6)
+
+- Eye's tag quality against JoyTag's on the real corpus (accepted / pending /
+  review rejects), and its TensorRT build + latency.
+- `search.min_cos_moment` (0.50 is a placeholder): text → audio and text →
+  video cosine bands on real recordings, as §10 did for text → image.
+- EG2 vision encoder fp16-on-TensorRT against int8-on-CUDA.
+- Media stage throughput and pool A peak with the audio encoder resident.
+- The audio/video UI in a browser: cards, moment badges, player seeking.
 
 **Documented but not built**
 

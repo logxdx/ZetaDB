@@ -2,7 +2,7 @@
 
 torch.cuda.memory_allocated() undercounts badly: it misses the CUDA
 context (~250-400 MB), cuDNN/cuBLAS workspaces, and anything allocated by
-a subprocess such as llama-server. nvidia-smi deltas are what the arbiter
+a subprocess such as llama-server. nvidia-smi deltas are what the engine
 budgets against, so they are what we measure.
 """
 from __future__ import annotations

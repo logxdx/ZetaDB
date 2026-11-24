@@ -1,4 +1,5 @@
-data/
+# data as a directory, or as the symlink a worktree uses for it
+/data
 .venv/
 __pycache__/
 *.pyc

@@ -1,4 +1,4 @@
-"""iwashere - FastAPI application.
+"""ZetaDB - FastAPI application.
 
 Serves the API and, in production, the built Svelte SPA from web/dist.
 Binds to 127.0.0.1 only: this is a single-user local tool with no auth.
@@ -11,7 +11,7 @@ import os
 from contextlib import asynccontextmanager
 
 # Cactus Needle phones home to a Supabase endpoint unless told not to.
-# iwashere is a local-only tool; opt out before the package is imported.
+# ZetaDB is a local-only tool; opt out before the package is imported.
 os.environ.setdefault("NEEDLE_TELEMETRY", "0")
 os.environ.setdefault("DO_NOT_TRACK", "1")
 
@@ -36,7 +36,7 @@ from server.ingest.watcher import watcher
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)-5s %(name)s: %(message)s")
 logging.getLogger("httpx").setLevel(logging.WARNING)
-log = logging.getLogger("iwashere")
+log = logging.getLogger("zetadb")
 
 
 def _register_stages() -> None:
@@ -108,7 +108,7 @@ async def lifespan(app: FastAPI):
     _register_stages()
     scheduler.start()
     watcher.start()
-    log.info("iwashere ready on http://%s:%s  stages=%s",
+    log.info("ZetaDB ready on http://%s:%s  stages=%s",
              cfg.get("server.host"), cfg.get("server.port"), scheduler.status()["handlers"])
     yield
     watcher.stop()
@@ -128,7 +128,7 @@ def _shutdown_models() -> None:
         log.debug("engine shutdown failed", exc_info=True)
 
 
-app = FastAPI(title="iwashere", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="ZetaDB", version="0.2.0", lifespan=lifespan)
 app.include_router(health.router)
 app.include_router(items.router)
 app.include_router(search.router)

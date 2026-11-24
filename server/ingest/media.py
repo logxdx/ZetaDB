@@ -1,6 +1,6 @@
 """Audio and video decoding for ingest - ffprobe/ffmpeg, no Python codec deps.
 
-Why windows (spec 18): EmbeddingGemma 2 hears only the first 30 s of an audio
+Why windows (spec 20): EmbeddingGemma 2 hears only the first 30 s of an audio
 input - its feature extractor truncates at 480 000 samples - and a video is
 vision-only, a handful of frames. Embedding a 40-minute podcast or a long
 clip as ONE vector would describe its first half-minute and nothing else. So

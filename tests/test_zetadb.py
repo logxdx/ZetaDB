@@ -263,3 +263,23 @@ def test_moment_retriever_keeps_one_best_window_per_item(tmp_path):
     assert [i for i, _ in ranked] == [item]               # 0.30 is under the floor
     assert moments[item]["start"] == 25.0                  # the better window wins
     assert moments[item]["score"] == pytest.approx(0.81, abs=1e-3)
+
+
+# ------------------------------------------------------------------- rename
+
+def test_legacy_iwashere_database_is_adopted(tmp_path):
+    """ZetaDB was iwashere: an existing data/iwashere.db (and its WAL) must
+    become data/zetadb.db on first start, not be left behind for an empty
+    library."""
+    from server.db.conn import init_db
+
+    old = tmp_path / "iwashere.db"
+    conn = init_db(old)
+    conn.execute("INSERT INTO items(kind, status, source, created_at, updated_at) "
+                 "VALUES ('note','ready','compose',0,0)")
+    conn.close()
+
+    new = tmp_path / "zetadb.db"
+    conn = init_db(new)
+    assert not old.exists()
+    assert conn.execute("SELECT count(*) AS n FROM items").fetchone()["n"] == 1

@@ -1,11 +1,11 @@
-# iwashere — Style Reference
+# ZetaDB — Style Reference
 > Midnight library. Treat the canvas as a black exhibition floor and each tile as one precisely lit object on it, with typography and blue controls operating as restrained labels around the work.
 
 **Theme:** dark
 
-The visual system here is adapted from the Apple product-page reference: its palette, type system, 28px geometry, shadowless elevation and rationed blue are taken as given. What changes is the context — those values are mapped onto iwashere's surfaces (infinite canvas, floating chrome, tiles, tags, focus panel, orbit) rather than onto a storefront. Colour values and tracking are the reference's measurements; role assignments are this project's.
+The visual system here is adapted from the Apple product-page reference: its palette, type system, 28px geometry, shadowless elevation and rationed blue are taken as given. What changes is the context — those values are mapped onto ZetaDB's surfaces (infinite canvas, floating chrome, tiles, tags, focus panel, orbit) rather than onto a storefront. Colour values and tracking are the reference's measurements; role assignments are this project's.
 
-iwashere is a local idea dump — screenshots, photographs, diagrams and typed notes, auto-tagged and searchable by keyword and by meaning. Under this system it stops looking like a tool and starts looking like a gallery: an uninterrupted Obsidian field that pans forever, oversized SF Pro Display type where the page is empty or a note leads, and dense SF Pro Text metadata sitting quietly in Ash beside the imagery. Broad 28px corners on every tile and panel, near-invisible elevation, compact floating chrome, and a single Signal Blue reserved for the one action in view make browsing read as a controlled exhibition rather than a card-based file list.
+ZetaDB (formerly iwashere) is a local multimodal archive — screenshots, photographs, diagrams, typed notes, recordings and video, auto-tagged and searchable by keyword, by meaning and by moment. Under this system it stops looking like a tool and starts looking like a gallery: an uninterrupted Obsidian field that pans forever, oversized SF Pro Display type where the page is empty or a note leads, and dense SF Pro Text metadata sitting quietly in Ash beside the imagery. Broad 28px corners on every tile and panel, near-invisible elevation, compact floating chrome, and a single Signal Blue reserved for the one action in view make browsing read as a controlled exhibition rather than a card-based file list.
 
 ## Colors
 
@@ -28,7 +28,7 @@ iwashere is a local idea dump — screenshots, photographs, diagrams and typed n
 
 **Why those two are pairs.** The reference uses Copper and Optical Yellow on *white*, and neither survives a black ground. Measured: Copper `#b64400` is 3.82:1 on Obsidian and 3.06:1 on Carbon — it fails 4.5:1 on both, and it carries a pending tag, which is text a person has to read. `#ef6c1a` is the nearest lift that passes (6.83 / 5.47). Optical Yellow is the mirror case — 11.84:1 on Carbon, 1.42:1 on White. Every status role therefore resolves per theme: the first value is the light-surface one, the second the dark.
 
-**Two additions the reference has no equivalent for.** A marketing page has no failing pipeline; iwashere does, and four ingest stages can each degrade independently. Extending the palette minimally rather than overloading Copper:
+**Two additions the reference has no equivalent for.** A marketing page has no failing pipeline; ZetaDB does, and four ingest stages can each degrade independently. Extending the palette minimally rather than overloading Copper:
 
 | Name | Light | Dark | Role |
 |------|-------|------|------|
@@ -77,7 +77,7 @@ Everything in this section is measured, not assumed. Porcelain on Obsidian is 19
 | display | SF Pro Display | 600 | 48px | 1.08 | -0.24px |
 | display-xl | SF Pro Display | 600 | 80px | 1.05 | -1.2px |
 
-The reference spends its display sizes on a hero product reveal. iwashere has two honest homes for them: **the empty canvas**, which becomes the hero stage, and **the first line of a note tile**, set as a lede so a typed thought holds the same visual weight as a photograph beside it.
+The reference spends its display sizes on a hero product reveal. ZetaDB has two honest homes for them: **the empty canvas**, which becomes the hero stage, and **the first line of a note tile**, set as a lede so a typed thought holds the same visual weight as a photograph beside it.
 
 ## Spacing & Layout
 
@@ -274,7 +274,7 @@ The rule is therefore not "no shadows" but **"no shadows on content"**. Elevatio
 
 ## Motion
 
-Two budgets, both collapsing to instant under `prefers-reduced-motion: reduce`. The reference is a page that scrolls; this is a canvas that pans, so motion is the one system iwashere brings of its own.
+Two budgets, both collapsing to instant under `prefers-reduced-motion: reduce`. The reference is a page that scrolls; this is a canvas that pans, so motion is the one system ZetaDB brings of its own.
 
 **Canvas motion** is a target/actual split: `tx/ty` is where the canvas is heading, `ox/oy` is what is drawn, and a rAF loop closes the gap with `k = 1 − exp(−dt/tau)` — framerate-independent, identical at 60 and 144 Hz. `TAU_FOLLOW = 95` for the wheel, `TAU_GLIDE = 230` for released momentum. A drag moves target and actual together so the canvas stays welded to the cursor, then hands its velocity over.
 

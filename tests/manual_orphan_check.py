@@ -1,14 +1,16 @@
 """Verify a hard-killed parent takes llama-server with it."""
 import os, subprocess, sys, time
-sys.path.insert(0,"/run/media/logx/EVM1-256/code/iwashere")
+from pathlib import Path as _P
+ROOT = str(_P(__file__).resolve().parents[1])
+sys.path.insert(0, ROOT)
 
-CHILD = '''
+CHILD = f'''
 import sys, time
-sys.path.insert(0,"/run/media/logx/EVM1-256/code/iwashere")
+sys.path.insert(0, {ROOT!r})
 from pathlib import Path
 from server.models.llama_server import LlamaServer
 # Any GGUF will do - this tests llama_server's lifecycle, not a model.
-d = Path("/run/media/logx/EVM1-256/code/iwashere/data/models")
+d = Path({ROOT!r}) / "data" / "models"
 m = next(iter(sorted(d.rglob("*.gguf"))))
 s = LlamaServer(m, ctx=512, ngl=0, embedding=True, cpu_only=True)
 s.start()

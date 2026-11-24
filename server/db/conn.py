@@ -51,7 +51,25 @@ def reader() -> sqlite3.Connection:
     return conn
 
 
+def _adopt_legacy_db(path: Path) -> None:
+    """ZetaDB was called iwashere, and its database was data/iwashere.db.
+    If the configured file does not exist yet but the old one does, move it
+    (with its WAL and shared-memory files) so an existing library carries
+    over instead of starting empty."""
+    if path.exists():
+        return
+    old = path.with_name("iwashere.db")
+    if path.name == "iwashere.db" or not old.exists():
+        return
+    for suffix in ("", "-wal", "-shm"):
+        src = old.with_name(old.name + suffix)
+        if src.exists():
+            src.rename(path.with_name(path.name + suffix))
+    log.warning("adopted legacy database %s as %s", old.name, path.name)
+
+
 def init_db(db_path: Path | None = None) -> sqlite3.Connection:
+    _adopt_legacy_db(db_path or load().path("paths.db"))
     conn = connect(db_path)
     conn.executescript(_SCHEMA.read_text())
     _migrate(conn)

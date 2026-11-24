@@ -1,4 +1,8 @@
-# iwashere — Technical Specification
+# ZetaDB — Technical Specification
+
+> **[M8]** This project was called *iwashere*; it is now **ZetaDB**, and audio, video, a single
+> model engine and Eye (replacing JoyTag) were added. Sections 1–19 are the record as built and
+> measured; where they are superseded a note points to **§20**, which describes the current state.
 
 **Version:** 1.0 (v1 scope)
 **Status:** Draft for implementation
@@ -35,7 +39,7 @@ Text notes and images. Keyword + semantic search over both. Auto-tagging against
 
 ### 1.3 Out of scope for v1
 
-PDFs (the layout engine is built so they slot in later — see §6.4). Audio, video. Multi-user, auth, sync. Mobile. Browser extension. Global hotkey capture.
+PDFs (the layout engine is built so they slot in later — see §6.4). ~~Audio, video~~ — **in scope since [M8], see §20.4**. Multi-user, auth, sync. Mobile. Browser extension. Global hotkey capture.
 
 ---
 
@@ -67,7 +71,7 @@ PDFs (the layout engine is built so they slot in later — see §6.4). Audio, vi
 │    escalation is EFFORT, not a   │                             │
 │    second model (§17.1)          │                             │
 ├──────────────────────────────────┴─────────────────────────────┤
-│  SQLite (WAL)  +  sqlite-vec  +  FTS5      data/iwashere.db    │
+│  SQLite (WAL)  +  sqlite-vec  +  FTS5      data/zetadb.db      │
 │  Blobs and thumbnails on disk              data/blobs/ thumbs/ │
 └────────────────────────────────────────────────────────────────┘
 ```
@@ -84,7 +88,7 @@ No model is loaded at fp32 or fp16 where a quantised form exists.
 
 | Family | Form | Note |
 |---|---|---|
-| ONNX (PP-OCR, JoyTag) | **static QDQ INT8** | calibrated locally, see §5.1 |
+| ONNX (PP-OCR) | **static QDQ INT8** | calibrated locally, see §5.1 (JoyTag, which also used this row, was replaced by Eye in [M8] — §20.3) |
 | ONNX (EmbeddingGemma 2) | **int8** | published `*_quantized`; [M0] cosine agreement with fp32 is 0.9954–1.0000 and retrieval margin 0.212 against 0.216, at 509 MB instead of 878 MB |
 | GGUF decoder | **Unsloth UD-Q3_K_XL** | dynamic per-layer quant |
 | GGUF vision projector | **F16** | smallest form Unsloth publishes; quantising an mmproj below Q8 degrades image grounding |
@@ -105,7 +109,8 @@ vision projectors stay at F16/Q8_0 — quantising an mmproj below Q8 measurably 
 | Model | Role | Runtime | Precision | VRAM | Pool |
 |---|---|---|---|---|---|
 | PP-OCRv6_medium det+rec | OCR | ONNX Runtime **TensorRT fp16** | fp16 engines from fp32 graphs | see §5.1 | A |
-| JoyTag | vocab tag scoring | ONNX Runtime CUDA | **INT8** | see §5.1 | A |
+| ~~JoyTag~~ **Eye** [M8] | vocab tag scoring | ONNX Runtime **TensorRT fp16** (converted from LiteRT, §20.3) | int8 weights, fp16 execution | not yet measured | A |
+| EmbeddingGemma 2 audio encoder [M8] | 30 s audio → soft tokens | ONNX Runtime CUDA | int8 | not yet measured | A |
 | EmbeddingGemma 2 vision encoder | image → soft tokens | ONNX Runtime CUDA | int8 | **624 MB** at 140 soft tokens | A |
 | EmbeddingGemma 2 backbone | text + image → 768-d | ONNX Runtime **CPU** | int8 | **0** (CPU, on purpose) | — |
 | **Pool A peak** | | | | **~1.2 GB** measured, one stage at a time | |
@@ -138,6 +143,9 @@ Three VRAM lessons from making this fit:
    `tests/manual_orphan_check.py` hard-kills a parent and asserts the child dies.
 
 ### 3.1 The GPU arbiter
+
+> **[M8]** The arbiter is now part of the model engine (`server/engine/core.py`); the rules below
+> are unchanged, but pools unload every *registered* model instead of a hand-kept list — §20.2.
 
 A single `GpuArbiter` holds a VRAM budget and hands out **leases**. Rules:
 
@@ -338,7 +346,7 @@ engine and a very long build for shapes we never feed it. `TRT_PROFILES` narrows
 **[M2] cuDNN needs help being found.** The CUDA EP `dlopen`s the unversioned `libcudnn.so`, but
 torch ships it as `nvidia/cudnn/lib/libcudnn.so.9`, and glibc matches an already-loaded library by
 SONAME so `ctypes` preloading does not help. `server/models/_native.py` symlinks the unversioned
-names into `$VIRTUAL_ENV/lib/iwashere-native`, puts it on `LD_LIBRARY_PATH` and re-execs once.
+names into `$VIRTUAL_ENV/lib/zetadb-native`, puts it on `LD_LIBRARY_PATH` and re-execs once.
 It must link cuDNN's *siblings* too (`libcudnn_graph`, `libcudnn_engines_*`): linking only the
 dispatcher yields `Invalid handle. Cannot load symbol cudnnCreate`.
 
@@ -446,6 +454,10 @@ The layout stage takes `list[TextBox]` and knows nothing about where the boxes c
 ## 7. Tagging and the vocabulary system
 
 ### 7.1 How JoyTag is actually used
+
+> **[M8] Superseded:** JoyTag is replaced by Desert Ant Labs' Eye, which keeps this section's
+> design (a scorer against our vocabulary, not a generator) with a calibrated curve per tag and a
+> type head that names screenshots, whiteboards and receipts — §20.3. Kept as the record of why.
 
 JoyTag returns a **sigmoid score for every one of its ~5000 Danbooru tags, independent per tag**:
 
@@ -1197,7 +1209,7 @@ note_cosine_max = 0.97
 ## 15. Project layout
 
 ```
-iwashere/
+ZetaDB/
 ├── spec.md
 ├── config.toml
 ├── pyproject.toml
@@ -1243,7 +1255,7 @@ iwashere/
 │   ├── joytag_aliases.yaml
 │   └── suppressed.txt
 └── data/                       gitignored
-    ├── iwashere.db
+    ├── zetadb.db
     ├── blobs/  thumbs/  models/
 ```
 
@@ -1679,7 +1691,7 @@ margins in the first table should not be read to three decimal places.
 
 **What LFM2.5-VL would actually buy is capability this project does not use yet.** Detection and
 grounding (RefCOCO 87.9), ScreenSpot-v2 at 78–82, and function calling are not captioning upgrades —
-they are new surfaces. If iwashere ever wants "point at the chart in this screenshot" or a
+they are new surfaces. If ZetaDB ever wants "point at the chart in this screenshot" or a
 tool-calling path, that is the reason to load it, not a better caption.
 
 **Not tested, and why.** Gemma 4 E4B is the obvious "newer Gemma" candidate and does **not** fit:
@@ -1790,7 +1802,8 @@ read across devices.
 
 ## 19. References
 
-- JoyTag — https://github.com/fpgaminer/joytag
+- Eye (Desert Ant Labs) — https://huggingface.co/desert-ant-labs/eye · https://desertant.com/models/eye/ (used with permission)
+- ~~JoyTag~~ — https://github.com/fpgaminer/joytag (replaced in [M8], §20.3)
 - Needle 3 — https://github.com/cactus-compute/needle · https://cactuscompute.com/needle
 - PP-OCRv6 — https://huggingface.co/blog/PaddlePaddle/pp-ocrv6 · https://paddlepaddle.github.io/PaddleOCR/main/en/version3.x/algorithm/PP-OCRv6/PP-OCRv6.html
 - LiteParse grid projection — https://www.llamaindex.ai/blog/how-liteparse-turns-pdfs-into-text-a-deep-dive-into-the-grid-projection-algorithm · https://github.com/run-llama/liteparse
@@ -1801,3 +1814,134 @@ read across devices.
 - ~~Qwen3-Embedding-0.6B~~, ~~jina-clip-v2~~ — both retired in [M6], see §9.4
 - sqlite-vec — https://github.com/asg017/sqlite-vec · https://alexgarcia.xyz/sqlite-vec/
 - Hybrid FTS5 + vector + RRF — https://alexgarcia.xyz/blog/2024/sqlite-vec-hybrid-search/index.html
+
+---
+
+## 20. [M8] ZetaDB — one engine, Eye, and audio/video
+
+iwashere is renamed **ZetaDB** and takes over that project's repository. Three changes come with
+the name: every model now runs in one engine, JoyTag is replaced by Desert Ant Labs' **Eye**, and
+**audio and video** become items that can be searched down to the moment. Everything in this
+section marked *measured* was measured; everything else is design, and §20.6 lists what still has
+to be measured on the GPU.
+
+### 20.1 The rename
+
+User-visible strings, the package, the FastAPI title and logger, and the native-library guard
+(`ZETADB_NATIVE_READY`) say ZetaDB. The database moves from `data/iwashere.db` to
+`data/zetadb.db`; `server.db.conn._adopt_legacy_db` renames the old file (with its `-wal` and
+`-shm`) on first start, so an existing library carries over. `tests/test_zetadb.py` pins that.
+
+### 20.2 One engine (`server/engine/`)
+
+The ingest arbiter and the unload list `app.py` used to maintain by hand are replaced by one
+registry:
+
+| Backend | Models |
+|---|---|
+| TensorRT FP16 → CUDA → CPU | PP-OCRv6 det + rec, Eye, and the EG2 encoders when their graph is TRT-runnable |
+| ONNX Runtime CPU | EG2 backbone, by design (§3, a query never waits for the GPU) |
+| llama.cpp | the captioning VLM, as a `llama-server` subprocess |
+
+Every model registers a `ModelSpec` (pool, backend, unload, provider). A lease on one GPU pool
+unloads *every* model registered in the other, so a new model cannot be forgotten and left holding
+VRAM — lesson 2 of §3 now enforced by construction rather than by remembering. All ONNX sessions
+come from `server.engine.onnx.session()`: one provider chain, one TensorRT engine cache, per-model
+optimisation profiles, and per-session degradation (a TRT *build* failure raises instead of
+falling back, §5.1).
+
+**TensorRT cannot run a dynamically quantised graph** (`MatMulInteger` / `DynamicQuantizeLinear`):
+it shatters into tiny partitions for no gain. `backend_for()` therefore sends such graphs to CUDA.
+That covers EG2's published `*_quantized` encoders, so they stay on the CUDA EP exactly as before.
+Putting the vision encoder on TensorRT means selecting its fp16 graph
+(`models.eg2.vision_dtype = "fp16"`) — §3's note that onnx-community's fp16 export is mixed
+precision and safe still applies — but that swap is **not measured yet** (§20.6).
+
+### 20.3 Eye replaces JoyTag
+
+JoyTag scored a Danbooru schema: no word for `screenshot`, `whiteboard`, `receipt` or `text`
+(§7.1), heavily NSFW-weighted, and a sigmoid whose meaning differed per tag. Eye
+(`desert-ant-labs/eye`, PE-Core S/16-384 encoder plus heads, used **with permission** from Desert
+Ant Labs) gives:
+
+- `type` — 16-way single-label: photo, selfie, screenshot, photo_of_screen, receipt, document,
+  id_card, whiteboard, map, chart_or_slide, meme_or_graphic, illustration_or_art, … (+ the summed
+  `reference` tag)
+- `scenes` — 558 Open Images labels, multi-label
+- a **calibration curve per tag** (`eye_meta.json`): raw head output → confidence where 0.5 is the
+  publisher's recommended cut and 0.9 the strict one. A score means the same for every tag.
+
+Like JoyTag it is a *scorer against our vocabulary*, not a generator: `vocab_terms.eye_alias`
+names the Eye tag a term reads. 43 seed terms have one; terms Eye has no word for (wireframe,
+terminal, night, a data `table` — Eye's `table` is furniture) stay zero-shot.
+
+**Runtime.** Eye ships as LiteRT (`eye.tflite`) and Core ML only. `scripts/convert_eye.py`
+converts the `photo` signature to ONNX once, so Eye runs in the engine like everything else.
+tf2onnx needed five fixes for this file, each one a real incompatibility rather than a workaround:
+
+1. **External buffers.** 601 of 927 weight buffers use the TFLite large-model layout (data at a
+   file offset, `Buffer.data` empty). tf2onnx read only `data`, so those weights vanished.
+2. **Opcode width.** Newer writers leave `deprecated_builtin_code` at 0 — which decodes as ADD —
+   and put the real opcode in `builtin_code`. tf2onnx trusted the old byte, so every DEQUANTIZE
+   arrived as a one-input int8 "ADD". TFLite's own reader takes the larger of the two.
+3. **Name clash.** The file already names 75 tensors `…_dequant`; tf2onnx's inserted dequant nodes
+   use the same suffix, and the graph closed into a cycle.
+4. **Missing options.** Element-wise ops with no `BuiltinOptions` table have no
+   `fused_activation_function`; a missing one means NONE.
+5. **GELU.** No tf2onnx handler; each of the 22 (all exact, `approximate = False`) becomes
+   `0.5·x·(1 + erf(x/√2))` — Erf runs on every provider, TensorRT included.
+
+**[M8] measured** against the LiteRT reference on 24 real library images: max |Δ| ≤ 1.3e-4 on
+every head (1e-5 on `type` and `scenes`), embedding cosine 1.000000, and every head already emits
+probabilities, so the curves apply to raw outputs directly.
+
+**Licence.** Eye's licence and third-party notices ship beside the weights; the UI carries the
+required "Powered by Desert Ant Labs" credit where machine tags are explained.
+
+### 20.4 Audio and video, searched by moment
+
+**Why windows.** EmbeddingGemma 2's audio front end truncates at 480 000 samples — **30 s at
+16 kHz**. Measured on the sentence-transformers reference (in the previous ZetaDB): the embedding
+of a 60 s clip has cosine **1.0000** with its first 30 s and 0.979 with its first 20 s; the second
+half simply is not heard. A video is vision-only frames. So one vector per file would describe the
+first half-minute of a podcast and nothing else.
+
+| Kind | Window | Embedded as |
+|---|---|---|
+| `sound` | 30 s every 25 s; < −50 dBFS skipped | `<boa> <audio>×n <eoa>` via the EG2 audio encoder |
+| `frames` | 10 s, 5 frames (1 every 2 s), ≤ 512 px | per frame `<boi> <video>×140 <eoi>`, no timestamps |
+
+The token layout is the one `EmbeddingGemma2Processor` builds; the audio placeholder count is the
+encoder's own output length, so the two cannot disagree. Videos also get their soundtrack as
+`sound` windows. Past 100 min of audio / 20 min of video the windows spread out to cover the file.
+Decoding is ffprobe/ffmpeg — a runtime dependency for media only.
+
+Schema: `segments(item_id, kind, start_s, end_s, frame_path)` and `vec_segments` (768-d, same
+space). The item's own `kind='item'` vector is the normalised mean of its segments, so related
+items, semantic edges and `text_vec` treat media like any other item.
+
+**Search** gains a fifth retriever, `moment`: KNN over `vec_segments`, one best window per item,
+gated like `_knn` (absolute floor `search.min_cos_moment`, then the relative margin). A result it
+surfaces carries `moment = {kind, start, end, frame_url, score}` and the UI opens the player there.
+
+**Tagging.** A video is tagged from up to three keyframes (the middle frame of each window): a
+term's score is its best over those frames, and the middle keyframe's vector becomes the video's
+`kind='visual'` row.
+
+### 20.5 Schema v4
+
+`joytag_alias → eye_alias`, `tag_scores.joytag → eye` (values dropped — Danbooru names and JoyTag
+sigmoids mean nothing to Eye), `items.kind` admits audio/video and gains `duration` (rebuilt the
+documented SQLite way, ids preserved), every image requeued for `tag_visual`, and the vocabulary
+re-seeded once at startup. **[M8] measured** on the real 32-item library: 32/32 ids preserved,
+32/32 FTS rows intact, 0 foreign-key violations, 16/16 human tags kept, 29 images queued, 43 terms
+re-aliased.
+
+### 20.6 Not yet measured — needs the GPU
+
+- Eye's tag quality against JoyTag's on this corpus (accepted / pending / review-queue rejects).
+- Eye's TensorRT build and latency.
+- `min_cos_moment` (0.50 is a placeholder under the image floor): text → audio and text → video
+  cosine bands on real recordings, the same way §10 measured text → image.
+- EG2 vision encoder at fp16 on TensorRT against int8 on CUDA (VRAM, s/image, margin).
+- Media stage throughput (windows/s) and pool A peak with the audio encoder resident.

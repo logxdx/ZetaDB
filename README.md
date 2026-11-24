@@ -1,85 +1,82 @@
-# iwashere
+<div align="center">
 
-Local idea dump with hybrid keyword + semantic search over text and images.
-Single-user, local-only. See [spec.md](spec.md) for the full design.
+# ZetaDB
 
-## Setup
+### Everything you've ever saved. Found in a moment.
 
-```sh
-uv sync                        # base deps (Python 3.12)
-uv pip install -e '.[needle]'  # structured extraction
-cd web && npm install && npm run build
-```
+Screenshots, photos, notes, recordings and video, in one search, on your own machine.
 
-## Run
+</div>
 
-```sh
-uv run -m server.app           # http://127.0.0.1:8777
-cd web && npm run dev          # hot-reload UI on :5173, proxies /api
-```
+<br>
 
-## Testing
+## One search. Every kind of file.
 
-Three layers, cheapest first.
+Type *"the whiteboard from the pricing meeting"* and ZetaDB brings back the photo of the board, the
+screenshot of the spreadsheet, the note you typed afterwards, and the recording of the call. One
+model understands pictures, text, sound and video the same way, so whatever you remember, ZetaDB
+finds it in whatever form you saved it.
 
-```sh
-# 1. unit + regression (no server, no GPU, <1s)
-uv run pytest tests/ -q
+## It finds the moment.
 
-# 2. API contract against a running server — every endpoint the SPA calls,
-#    checking response SHAPE matches what the frontend destructures
-uv run scripts/smoke.py
+A two-hour recording isn't one thing, and ZetaDB doesn't treat it like one. It listens in
+half-minute windows and watches in ten-second scenes, so a search lands on **12:40**, where the
+idea was said, or on the scene at **0:35**, where it was shown. Open the result and it plays from
+there.
 
-# 3. what this machine can actually load, and what it costs
-uv run scripts/probe.py
-```
+## It reads what you capture.
 
-`scripts/smoke.py` is the one that catches the failure mode with no server-side
-error: a mismatch between `web/src/lib/api.ts` and `server/api/*` breaks the UI
-silently. It also verifies SSE delivers and that thumbnails and full images serve.
+Screenshots and whiteboards are read word for word, so a phone number, an error message or an
+invoice code is as searchable as a sentence. Every image is described in plain language, and the
+people, dates, links and to-dos in your notes are pulled out for you.
 
-### Testing the UI
+## Tags that know their place.
 
-The SPA has to be exercised in a real browser — nothing above covers rendering,
-layout or interaction.
+Images are tagged automatically: *screenshot, receipt, chart, whiteboard, beach, tree*. Each tag
+carries how sure it is. Confident tags are applied, unsure ones wait for a quick yes or no, and a
+tag you set yourself is never overwritten. Search for *tree* and you get everything tagged tree,
+and everything that simply looks like one.
 
-```sh
-uv run -m server.app                 # backend + built SPA on :8777
-cd web && npm run dev                # OR hot-reload UI on :5173, proxying /api
-```
+## See how things connect.
 
-Then, at http://127.0.0.1:8777:
+Every item shows what it's close to: what looks alike, what says the same thing, what you linked
+yourself. Follow the threads across months of saved ideas.
 
-| check | how |
-|---|---|
-| canvas renders | images and notes as equal-weight cards, no horizontal scroll |
-| live ingest | `cp shot.png ~/dump` — a card should appear within ~1s and fill in as stages land |
-| drag/paste | drop a file on the window; `Ctrl+V` an image or a block of text |
-| search | type in the header bar; results should show `why` badges (tag/lexical/similar) |
-| command palette | `⌘K` / `Ctrl-K`, `Tab` switches search ↔ new note, `⌘↵` saves |
-| focus view | click a card → tags with confidences, OCR tab, graph tab, related strip |
-| theme | the `system` button cycles system → dark → light; both must be legible |
-| responsive | narrow to ~400px: one column, full-screen overlay, still no h-scroll |
-| reduced motion | with `prefers-reduced-motion`, card settle and focus zoom stop |
+## Drop it in. That's all.
 
-## Probes
+Drag files onto the window, paste a screenshot, type a note, or save into a watched folder. New
+things appear in a second and fill in as they're understood.
 
-`scripts/probe.py` answers "what can this machine actually load, and what does it cost?"
+## Private by design.
 
-```sh
-uv run scripts/probe.py                    # table of every component
-uv run scripts/probe.py needle sqlite      # a subset
-uv run scripts/probe.py --json             # machine-readable
-uv run scripts/probe.py --download joytag  # fetch one model's weights
-```
+Every model runs on your computer: reading, tagging, describing, searching. Nothing is uploaded.
+It's built to fit a laptop's 6 GB graphics card.
 
-Results are cached to `data/probe_results.json` and served by `/api/health`.
+<br>
 
-## Layout
+<div align="center">
 
-```
-server/    FastAPI app, SQLite + sqlite-vec, ingest pipeline, model runtimes
-web/       Svelte 5 + Vite SPA
-vocab/     controlled tag vocabulary (seed, JoyTag aliases, suppressions)
-data/      gitignored: db, blobs, thumbnails, model weights
-```
+| Notes · Images · Audio · Video | Finds the exact moment | Reads text in images |
+| :---: | :---: | :---: |
+| **Calibrated tags, human-approved** | **Runs entirely on your machine** | **Light & dark** |
+
+<br>
+
+**[Get started →](docs/SETUP.md)**  &nbsp;·&nbsp;  [How it works](spec.md)
+
+</div>
+
+<br>
+
+---
+
+#### Credits
+
+- **Embeddings:** [EmbeddingGemma 2](https://huggingface.co/google/embeddinggemma-2) by Google DeepMind
+- **Image tags:** [Eye](https://huggingface.co/desert-ant-labs/eye), used with permission — Powered by [Desert Ant Labs](https://desertant.com)
+- **Text in images:** [PP-OCRv6](https://huggingface.co/PaddlePaddle) by PaddlePaddle
+- **Descriptions:** [LFM2.5-VL](https://www.liquid.ai) by Liquid AI, via [llama.cpp](https://github.com/ggml-org/llama.cpp)
+- **Extraction:** [Needle](https://github.com/cactus-compute/needle) by Cactus
+- **Search:** [SQLite](https://sqlite.org), [sqlite-vec](https://github.com/asg017/sqlite-vec)
+- **Runtime:** [ONNX Runtime](https://onnxruntime.ai) with TensorRT, [FFmpeg](https://ffmpeg.org)
+- **Interface:** [Svelte](https://svelte.dev), [FastAPI](https://fastapi.tiangolo.com)
