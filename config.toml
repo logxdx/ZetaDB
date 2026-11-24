@@ -110,6 +110,9 @@ pool       = "A"             # vision encoder only
 # put jina's text tower and Qwen on the CPU. The soft tokens crossing from
 # the vision encoder are ~280x512 floats, ~570 KB, so the split is free.
 backbone_device   = "cpu"
+# Ingest, under the pool A lease, borrows a CUDA copy (+686 MB, ~6x faster
+# for audio/video windows, ~12x for passages); released with the encoders.
+ingest_backbone_device = "cuda"
 dim               = 768
 # Matryoshka truncation: 0 keeps all 768. The published table puts 512d at
 # 61.17 MTEB vs 61.36, and 64.32 MIEB vs 64.64 - very nearly free. Not

@@ -73,6 +73,7 @@ class Lease:
     model: str | None
     acquired_at: float = field(default_factory=time.monotonic)
     released: bool = False
+    thread: int = field(default_factory=threading.get_ident)
 
 
 class Engine:
@@ -139,6 +140,15 @@ class Engine:
             self._last_used[lease.pool] = time.monotonic()
             self._held = None
             self._free.notify_all()
+
+    def holds(self, pool: Pool) -> bool:
+        """True when the calling thread holds the lease on `pool`. Lets a
+        model use the GPU opportunistically for work done under a lease
+        (ingest) while the same call from any other thread (a search query)
+        stays on its CPU path and never touches VRAM it does not own."""
+        held = self._held
+        return (held is not None and not held.released and held.pool == pool
+                and held.thread == threading.get_ident())
 
     @contextmanager
     def use(self, pool: Pool, model: str | None = None, timeout_s: float = 600):

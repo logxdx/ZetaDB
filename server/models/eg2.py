@@ -58,6 +58,7 @@ import numpy as np
 from server.config import load
 from server.engine import ModelSpec, Profile, register_profile, session
 from server.engine.core import engine as model_engine
+from server.engine.onnx import available_providers
 from server.models.embeddings import pack
 
 log = logging.getLogger(__name__)
@@ -141,6 +142,12 @@ class Eg2:
         # Per video frame. The checkpoint's video processor uses 140.
         self.video_soft_tokens = cfg.get(f"models.{key}.video_soft_tokens", 140)
         self.backbone_gpu = cfg.get(f"models.{key}.backbone_device", "cpu") == "cuda"
+        # Work done under the pool A lease (ingest: images, frames, audio,
+        # passages) borrows a CUDA copy of the backbone, released with the
+        # encoders. Search keeps the CPU copy. Measured on the 6 GB card:
+        # +686 MB, a 30 s audio window 0.79 s -> 0.13 s, 32 passages 2.3 s -> 0.19 s.
+        self.ingest_backbone_gpu = (not self.backbone_gpu and cfg.get(
+            f"models.{key}.ingest_backbone_device", "cuda") == "cuda")
         self.vision_backend = cfg.get(f"models.{key}.vision_backend", "auto")
         self.audio_backend = cfg.get(f"models.{key}.audio_backend", "auto")
         self.max_tok = cfg.get(f"models.{key}.max_text_tokens", 8192)
@@ -148,6 +155,7 @@ class Eg2:
         self.vision_available = self.available and self.vision_path.exists()
         self.audio_available = self.available and self.audio_path.exists()
         self._bb = None
+        self._bb_gpu = None
         self._vis = None
         self._aud = None
         self._tok = None
@@ -177,7 +185,8 @@ class Eg2:
             model_engine.register(ModelSpec(
                 name="eg2-encoders", pool="A", backend="onnx", unload=self.unload,
                 provider=self._encoder_providers,
-                loaded=lambda: self._vis is not None or self._aud is not None))
+                loaded=lambda: (self._vis is not None or self._aud is not None
+                                or self._bb_gpu is not None)))
             model_engine.register(ModelSpec(
                 name="eg2-backbone", pool="A" if self.backbone_gpu else "CPU",
                 backend="onnx", unload=None,
@@ -195,6 +204,8 @@ class Eg2:
             parts.append(f"vision={self._vis.get_providers()[0]}")
         if self._aud is not None:
             parts.append(f"audio={self._aud.get_providers()[0]}")
+        if self._bb_gpu is not None:
+            parts.append(f"ingest backbone={self._bb_gpu.get_providers()[0]}")
         return ", ".join(parts) or "not loaded"
 
     # ------------------------------------------------------------- sessions
@@ -203,6 +214,17 @@ class Eg2:
         if self.available and self._bb is None:
             backend = "onnx-cuda" if self.backbone_gpu else "onnx-cpu"
             self._bb = session(self.backbone_path, "eg2_backbone", backend)
+
+    def _backbone(self):
+        """The session to run: the CUDA copy when this thread holds pool A
+        and ingest is allowed to use it, the resident one otherwise."""
+        if (self.ingest_backbone_gpu and self.available and model_engine.holds("A")
+                and "CUDAExecutionProvider" in available_providers()):
+            if self._bb_gpu is None:
+                self._bb_gpu = session(self.backbone_path, "eg2_backbone_gpu", "onnx-cuda")
+            return self._bb_gpu
+        self.load_backbone()
+        return self._bb
 
     def load_vision(self) -> None:
         if self.vision_available and self._vis is None:
@@ -214,9 +236,11 @@ class Eg2:
 
     def unload(self) -> None:
         """Release the GPU-resident encoders. The backbone is on the CPU and
-        search needs it on every query, so it stays."""
+        search needs it on every query, so it stays; its ingest-time CUDA
+        copy goes with the encoders."""
         self._vis = None
         self._aud = None
+        self._bb_gpu = None
         if self.backbone_gpu:
             self._bb = None
 
@@ -317,7 +341,7 @@ class Eg2:
                       audio_features: np.ndarray | None = None) -> np.ndarray:
         """Right-pad to a rectangle and run. Unused modality inputs are
         required by the graph, so they are passed as empty [0, 512]."""
-        self.load_backbone()
+        bb = self._backbone()
         width = max(len(i) for i in batch_ids)
         ids = np.zeros((len(batch_ids), width), dtype=np.int64)
         mask = np.zeros((len(batch_ids), width), dtype=np.int64)
@@ -332,7 +356,7 @@ class Eg2:
             "video_features": empty if video_features is None else video_features,
             "audio_features": empty if audio_features is None else audio_features,
         }
-        out = self._bb.run(["sentence_embedding"], feeds)[0]
+        out = bb.run(["sentence_embedding"], feeds)[0]
         return out[:, :self.truncate_dim] if self.truncate_dim else out
 
     # --------------------------------------------------------------- public

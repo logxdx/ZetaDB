@@ -356,3 +356,22 @@ def test_reprompting_a_term_clears_its_calibration(tmp_path, monkeypatch):
         "SELECT term, clip_mu, prompt_template FROM vocab_terms")}
     assert rows["night"] == (None, "a photo taken at night")
     assert rows["tree"][0] == pytest.approx(0.57)          # unchanged prompt keeps it
+
+
+def test_lease_holds_is_thread_scoped():
+    """Only the thread holding pool A may borrow GPU sessions under it, so a
+    search query running beside ingest stays on the CPU."""
+    import threading
+    from server.engine.core import Engine
+    e = Engine()
+    assert not e.holds("A")
+    lease = e.lease("A", "t")
+    try:
+        assert e.holds("A") and not e.holds("B")
+        seen = []
+        t = threading.Thread(target=lambda: seen.append(e.holds("A")))
+        t.start(); t.join()
+        assert seen == [False]
+    finally:
+        e.release(lease)
+    assert not e.holds("A")
