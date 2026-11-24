@@ -12,7 +12,8 @@
   {#if item.thumb_url}
     <img src={item.thumb_url} alt="" />
   {:else}
-    <span class="notechip meta">note</span>
+    <!-- No picture yet (a note, or media still processing): say what it is. -->
+    <span class="notechip meta">{item.kind}</span>
   {/if}
   <div class="what">
     <span class="title">{item.title ?? `item ${item.id}`}</span>

@@ -444,8 +444,11 @@ class Eg2:
         if not self.audio_available or wave is None or len(wave) == 0:
             return None
         self.load_audio()
+        # Passed as a one-element batch: that is how EmbeddingGemma2Processor
+        # calls it, and transformers 5.17's un-batched path transposes a bare
+        # 1-D waveform the wrong way and fails in _extract_spectrogram.
         fe = self._audio_features_extractor()(
-            np.asarray(wave, dtype=np.float32), sampling_rate=sampling_rate,
+            [np.asarray(wave, dtype=np.float32)], sampling_rate=sampling_rate,
             return_tensors="np")
         x = np.asarray(fe["input_features"], dtype=np.float32)
         m = np.asarray(fe["input_features_mask"]).astype(bool)

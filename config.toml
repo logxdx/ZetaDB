@@ -390,6 +390,12 @@ rel_margin       = 0.08
 # Calibrate with a few known recordings before trusting it.
 w_moment         = 1.00
 min_cos_moment   = 0.50
+# How far below the best cosine of a query a result fades to fully dimmed in
+# the UI (search.hybrid.match_strength). [M8] on synthetic media the right
+# answer beat the closest wrong one by 0.03-0.15, and a sound query's image
+# tail sat ~0.10-0.14 below its answer; 0.15 dims that tail to ~0.1-0.3.
+# Not yet tuned on a real library.
+dim_range        = 0.15
 
 [graph]
 seed_top_k         = 8

@@ -8,26 +8,67 @@ export const WHY: Record<string, string> = {
   lexical: "text match",
   text_vec: "similar wording",
   img_vec: "looks similar",
+  // A match inside an audio or video file. Per item it resolves to what
+  // kind of window matched (see whyLabel); this is the aggregate wording.
+  moment: "scene / heard",
 };
-export const whyLabel = (k: string) => WHY[k] ?? k;
+/** `moment` names a matched window, so with the item in hand it says which
+ *  kind: a video scene, or something heard on a soundtrack. */
+export const whyLabel = (k: string, it?: { moment?: Moment | null }) =>
+  k === "moment" && it?.moment
+    ? (it.moment.kind === "frames" ? "scene" : "heard")
+    : (WHY[k] ?? k);
+
+/** Seconds as m:ss, or h:mm:ss past the hour. */
+export function clock(sec: number | null | undefined): string {
+  const t = Math.max(0, Math.floor(sec ?? 0));
+  const h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), s = t % 60;
+  const ss = String(s).padStart(2, "0");
+  return h ? `${h}:${String(m).padStart(2, "0")}:${ss}` : `${m}:${ss}`;
+}
+
+export type Kind = "note" | "image" | "audio" | "video";
+/** Audio and video play over time: a player in focus, a duration on the tile. */
+export const isTimed = (k: Kind) => k === "audio" || k === "video";
+
+/** One window an audio/video file was embedded in: 30s sound windows, or a
+ *  10s video window whose keyframe is `frame_url`. */
+export type Segment = {
+  id: number; kind: "sound" | "frames";
+  start: number; end: number; frame_url: string | null;
+};
+/** WHERE in an audio/video file a search matched. */
+export type Moment = {
+  segment_id: number; kind: "sound" | "frames";
+  start: number; end: number; frame_url: string | null; score: number;
+};
 
 export type Tag = { term: string; confidence: number; source: "human" | "machine"; state: string };
 
 export type ReviewTag = {
   item_id: number; term_id: number; term: string;
-  confidence: number; kind: "note" | "image"; title: string | null;
+  confidence: number; kind: Kind; title: string | null;
 };
 export type ReviewProposal = { id: number; term: string; created_at: number };
 
 export type Item = {
-  id: number; kind: "note" | "image"; status: string;
+  id: number; kind: Kind; status: string;
   title: string | null; preview: string; caption: string | null;
   caption_model: string | null; width: number | null; height: number | null;
-  thumb_url?: string; file_url?: string;
+  /** Image: the picture. Video: a poster frame. Audio: a drawn waveform. */
+  thumb_url?: string;
+  /** Image, audio and video; the endpoint honours Range, so media can seek. */
+  file_url?: string;
+  /** Seconds; audio and video only. */
+  duration?: number | null;
   near_dup_of: number | null; project_id: number | null;
   created_at: number; updated_at: number;
   tags: Tag[];
   score?: number; why?: string[]; ranks?: Record<string, number>;
+  /** Search only: 0..1, how close this result is to the query's best match
+   *  (server: search.hybrid.match_strength). The canvas dims by it. */
+  match?: number;
+  moment?: Moment | null;
   shared?: string[];
   link?: string; weight?: number;
 };
@@ -39,6 +80,16 @@ export type ItemDetail = Item & {
   todos: { id: number; text: string; due_date: string | null; done: number }[];
   errors: { stage: string; error: string; ts: number }[];
   near_dups: number[];
+  segments: Segment[];
+};
+
+export type Health = {
+  status: string;
+  engine: {
+    budget_mb: number; free_mb: number; held: unknown; resident: unknown;
+    models: Record<string, { pool: string; backend: string; provider: string; loaded: boolean }>;
+  };
+  [k: string]: unknown;
 };
 
 async function j<T>(url: string, init?: RequestInit): Promise<T> {
@@ -70,6 +121,7 @@ export const api = {
     for (const file of files) f.append("files", file);
     return j<{ created: any[] }>("/api/items", { method: "POST", body: f });
   },
+  health: () => j<Health>("/api/health"),
   remove: (id: number) => j(`/api/items/${id}`, { method: "DELETE" }),
   queue: () => j<{ depths: Record<string, number>; total: number }>("/api/queue"),
   review: (limit = 200) =>

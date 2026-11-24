@@ -1,6 +1,6 @@
 <script lang="ts">
   import { store, connectEvents } from "./lib/stores/items.svelte";
-  import { api, whyLabel } from "./lib/api";
+  import { api, whyLabel, type Moment } from "./lib/api";
   import Canvas from "./lib/components/Canvas.svelte";
   import RelatedBar from "./lib/components/RelatedBar.svelte";
   import Focus from "./lib/components/Focus.svelte";
@@ -14,6 +14,12 @@
   let paletteOpen = $state(false);
   let paletteMode = $state<"search" | "note">("search");
   let focusId = $state<number | null>(null);
+  /* Where a search matched inside the focused audio/video, so the player
+     can open on that moment. Only set when focus comes from a result. */
+  let focusMoment = $state<Moment | null>(null);
+  function openFocus(id: number | null, moment: Moment | null = null) {
+    focusId = id; focusMoment = moment;
+  }
   let dragging = $state(false);
   let fileInput = $state<HTMLInputElement | null>(null);
   let uploadNote = $state<string | null>(null);
@@ -65,7 +71,7 @@
     if (e.key === "Escape") {
       if (reviewOpen) reviewOpen = false;
       else if (paletteOpen) paletteOpen = false;
-      else if (focusId !== null) focusId = null;
+      else if (focusId !== null) openFocus(null);
       else if (store.mode === "related") store.exitRelated();
       else if (typing) el?.blur();
       return;
@@ -133,7 +139,7 @@
   </form>
 
   <input bind:this={fileInput} type="file" multiple hidden onchange={pickFiles}
-         accept="image/*,.txt,.md,.markdown,.text,.rst,.org" />
+         accept="image/*,audio/*,video/*,.mp3,.wav,.flac,.ogg,.m4a,.aac,.opus,.mp4,.mov,.webm,.mkv,.avi,.txt,.md,.markdown,.text,.rst,.org" />
   <ThemeToggle />
 </div>
 
@@ -158,12 +164,13 @@
          display-scale statement on an uninterrupted Obsidian field. -->
     <div class="empty">
       <h1 class="hero">Nothing here yet.</h1>
-      <p class="lede">Drop files anywhere, paste an image or a block of text,
-        or press <kbd>+</kbd> to dump an idea.</p>
+      <p class="lede">Drop images, audio, video or text files anywhere, paste an
+        image or a block of text, or press <kbd>+</kbd> to dump an idea.</p>
       <p class="where meta">watching <code>~/dump</code></p>
     </div>
   {:else}
-    <Canvas items={store.items} onopen={openItem} oninfo={(id) => (focusId = id)}
+    <Canvas items={store.items} onopen={openItem}
+            oninfo={(id) => openFocus(id, store.items.find((x) => x.id === id)?.moment ?? null)}
             focusItem={store.mode === "related" ? store.relatedTo : null}
             relKey={store.mode === "related" ? store.relMode : ""} />
   {/if}
@@ -177,7 +184,8 @@
 {/if}
 
 {#if focusId !== null}
-  <Focus id={focusId} onclose={() => (focusId = null)} onopen={(id) => (focusId = id)} />
+  <Focus id={focusId} moment={focusMoment}
+         onclose={() => openFocus(null)} onopen={(id) => openFocus(id)} />
 {/if}
 <Review bind:open={reviewOpen} onreviewed={() => { refreshPending(); store.loadStream(true); }} />
 <Palette bind:open={paletteOpen} bind:mode={paletteMode} onsearch={runSearch}

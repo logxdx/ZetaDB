@@ -70,6 +70,23 @@ def _python() -> ProbeResult:
     )
 
 
+@probe("ffmpeg", "audio/video decoding")
+def _ffmpeg() -> ProbeResult:
+    """Audio and video are decoded with ffmpeg/ffprobe (server.ingest.media);
+    without them the media stage fails every audio/video item."""
+    import shutil
+    import subprocess
+    ff, fp = shutil.which("ffmpeg"), shutil.which("ffprobe")
+    if not (ff and fp):
+        return ProbeResult("ffmpeg", "audio/video decoding", "missing",
+                           detail="install ffmpeg (provides ffprobe) to ingest audio and video")
+    first = subprocess.run([ff, "-version"], capture_output=True, text=True,
+                           timeout=10).stdout.splitlines()[:1]
+    return ProbeResult("ffmpeg", "audio/video decoding", "ok",
+                       backend=(first[0].split(" ")[2] if first else None),
+                       extra={"ffmpeg": ff, "ffprobe": fp})
+
+
 @probe("sqlite", "database")
 def _sqlite() -> ProbeResult:
     import sqlite3

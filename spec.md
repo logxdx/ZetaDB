@@ -1928,6 +1928,27 @@ surfaces carries `moment = {kind, start, end, frame_url, score}` and the UI open
 term's score is its best over those frames, and the middle keyframe's vector becomes the video's
 `kind='visual'` row.
 
+**[M8] measured on CPU** (GPU busy at the time), through the real int8 ONNX encoders and the
+ffmpeg windowing, on synthetic media — a sanity check, not a calibration. Every text query ranked
+its own file first:
+
+| query | tone.wav | pink noise | test-pattern video | red video |
+|---|---|---|---|---|
+| "a steady high pitched beep" | **0.693** | 0.653 | 0.592 | 0.591 |
+| "static hiss like heavy rain" | 0.573 | **0.680** | 0.590 | 0.561 |
+| "a solid red screen" | 0.604 | 0.545 | 0.612 | **0.759** |
+| "colourful television test pattern with bars" | 0.522 | 0.519 | **0.704** | 0.547 |
+
+End to end through the running server, a beep query landed on the test-pattern video's
+*soundtrack* (a 440 Hz sine) and on the tone file's 25–40 s window; "test pattern" landed on the
+video's 10–20 s scene. A bug only a real run could find: transformers 5.17's audio feature
+extractor transposes an un-batched 1-D waveform the wrong way, so `embed_audio` passes a
+one-element batch, as `EmbeddingGemma2Processor` itself does.
+
+**EG2's int8 graphs are not dynamically quantised** — they use ORT's weight-only block ops
+(`MatMulNBits`, `GatherBlockQuantized`). TensorRT cannot run those either, so the engine's check
+is "contains ORT-only quantisation ops", which sends them to CUDA and sends Eye to TensorRT.
+
 ### 20.5 Schema v4
 
 `joytag_alias → eye_alias`, `tag_scores.joytag → eye` (values dropped — Danbooru names and JoyTag
@@ -1936,6 +1957,18 @@ documented SQLite way, ids preserved), every image requeued for `tag_visual`, an
 re-seeded once at startup. **[M8] measured** on the real 32-item library: 32/32 ids preserved,
 32/32 FTS rows intact, 0 foreign-key violations, 16/16 human tags kept, 29 images queued, 43 terms
 re-aliased.
+
+### 20.7 Dimming by relevance
+
+RRF ranks by position, which says nothing about whether the 30th result is nearly as good as the
+first. A query about a sound let `img_vec` admit a flat tail of 29 photographs, all ~0.1 below the
+answer, and drew them at full strength beside it. Each result now carries `match` (0–1):
+vector evidence is `1 − (best cosine of this query − its cosine) / search.dim_range` (0.15),
+keyword evidence never drops below 0.6, tag evidence is relative to the best tag hit, and the
+strongest piece wins. The canvas draws a result at `0.2 + 0.8 × match` opacity, full again on
+hover or keyboard focus, and says "weak match" to a screen reader below 0.34. On the beep query
+the three real answers scored 0.80–1.00 and 26 of the 29 photographs 0.4 or less.
+`dim_range` is a placeholder until it is tuned on a real library.
 
 ### 20.6 Not yet measured — needs the GPU
 

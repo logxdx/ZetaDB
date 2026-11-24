@@ -83,6 +83,7 @@ interaction. At http://127.0.0.1:8777:
 | drag/paste | drop a file on the window; `Ctrl+V` an image or a block of text |
 | search | results show `why` badges (tag / lexical / similar / scene / heard) |
 | moments | search for something said in a recording: the card shows the time, Focus plays from it |
+| dimming | after a search, weak results fade by how far they are from the best; hover restores them |
 | command palette | `⌘K` / `Ctrl-K`, `Tab` switches search ↔ new note, `⌘↵` saves |
 | focus view | tags with confidences, OCR tab, graph tab, related strip, segment timeline |
 | theme | the `system` button cycles system → dark → light; both must be legible |

@@ -44,9 +44,10 @@ def test_engine_pools_are_exclusive_and_evict_registered_models(monkeypatch):
     eng.release(lease)
 
 
-def test_dynamic_int8_graphs_never_go_to_tensorrt(tmp_path):
-    """TensorRT cannot run MatMulInteger; sending such a graph there just
-    shatters it into tiny partitions. 'auto' must pick CUDA instead."""
+def test_ort_quantised_graphs_never_go_to_tensorrt(tmp_path):
+    """TensorRT cannot run ORT-only quantisation ops (MatMulInteger, or the
+    MatMulNBits that EG2's published int8 graphs use); sending such a graph
+    there shatters it into tiny partitions. 'auto' must pick CUDA instead."""
     import onnx
     from onnx import TensorProto, helper
 
@@ -68,7 +69,7 @@ def test_dynamic_int8_graphs_never_go_to_tensorrt(tmp_path):
 
     q = graph("MatMulInteger", tmp_path / "q.onnx")
     f = graph("MatMul", tmp_path / "f.onnx")
-    assert eo.is_dynamic_quantised(q) and not eo.is_dynamic_quantised(f)
+    assert eo.is_ort_quantised(q) and not eo.is_ort_quantised(f)
     assert eo.backend_for(q, "auto") == "onnx-cuda"
     assert eo.backend_for(q, "onnx-cpu") == "onnx-cpu"      # explicit wins
 
@@ -283,3 +284,29 @@ def test_legacy_iwashere_database_is_adopted(tmp_path):
     conn = init_db(new)
     assert not old.exists()
     assert conn.execute("SELECT count(*) AS n FROM items").fetchone()["n"] == 1
+
+
+# ------------------------------------------------------------------ dimming
+
+def test_match_strength_dims_by_distance_from_the_best():
+    """The UI dims a result by `match`. It must follow similarity, not RRF
+    rank: a flat tail 0.1 below the answer is mostly dimmed, a keyword hit
+    never is, and nothing goes negative."""
+    from server.search.hybrid import Hit, match_strength
+
+    best = Hit(1, reasons={"moment": 0.70})
+    near = Hit(2, reasons={"img_vec": 0.66})
+    tail = Hit(3, reasons={"img_vec": 0.60})
+    far = Hit(4, reasons={"text_vec": 0.40})
+    word = Hit(5, reasons={"lexical": 1.0, "img_vec": 0.40})
+    tag = Hit(6, reasons={"tag": 0.45})
+    other_tag = Hit(7, reasons={"tag": 0.90})
+    hits = [best, near, tail, far, word, tag, other_tag]
+    match_strength(hits, dim_range=0.15)
+
+    assert best.match == 1.0
+    assert near.match == pytest.approx(1 - 0.04 / 0.15, abs=1e-3)
+    assert tail.match == pytest.approx(1 - 0.10 / 0.15, abs=1e-3)
+    assert far.match == 0.0
+    assert word.match >= 0.6
+    assert tag.match == pytest.approx(0.5) and other_tag.match == 1.0

@@ -43,6 +43,9 @@ class Hit:
     reasons: dict[str, float] = field(default_factory=dict)
     # Best-matching audio/video window, when the moment retriever found one.
     moment: dict | None = None
+    # How strongly this result matched, 0..1, RELATIVE to the best result of
+    # this query (see match_strength). The UI dims a result by it.
+    match: float = 1.0
 
     @property
     def why(self) -> list[str]:
@@ -215,6 +218,47 @@ def _moments(conn: sqlite3.Connection, vec: bytes, limit: int, min_cos: float,
     return ranked, moments
 
 
+VECTOR_RETRIEVERS = ("text_vec", "img_vec", "moment")
+
+
+def match_strength(hits: list[Hit], dim_range: float) -> None:
+    """Set each hit's `match` in 0..1: how close it is to the best answer.
+
+    RRF ranks by position, so its score says nothing about whether the 30th
+    result is nearly as good as the first or nowhere near it - and a query
+    about a sound lets the image retriever admit a flat tail of photographs
+    that all sit ~0.1 below the real answer. The cosines carry that
+    information, so:
+
+      vector hit   1 - (best cosine for this query - its cosine) / dim_range,
+                   clamped; equal to the best -> 1, dim_range below -> 0.
+                   One `best` across all three vector views, because they
+                   share one space and one scale.
+      lexical hit  the query's words are literally in it: 1.0 for the top
+                   BM25 hit, never below 0.6 for any keyword match.
+      tag hit      accepted tag confidence x term similarity, relative to
+                   the best tag hit.
+
+    A hit's match is the strongest of its pieces of evidence.
+    """
+    best_cos = max((h.reasons[r] for h in hits for r in VECTOR_RETRIEVERS if r in h.reasons),
+                   default=None)
+    best_lex = max((h.reasons["lexical"] for h in hits if "lexical" in h.reasons), default=None)
+    best_tag = max((h.reasons["tag"] for h in hits if "tag" in h.reasons), default=None)
+    span = max(dim_range, 1e-6)
+    for h in hits:
+        parts = []
+        if best_cos is not None:
+            cos = [h.reasons[r] for r in VECTOR_RETRIEVERS if r in h.reasons]
+            if cos:
+                parts.append(1.0 - (best_cos - max(cos)) / span)
+        if best_lex and "lexical" in h.reasons:
+            parts.append(max(0.6, h.reasons["lexical"] / best_lex))
+        if best_tag and "tag" in h.reasons:
+            parts.append(h.reasons["tag"] / best_tag)
+        h.match = round(min(1.0, max(0.0, max(parts, default=0.0))), 3)
+
+
 def search(q: str, *, limit: int = 60, filters: dict | None = None,
            embed_query=None) -> dict:
     """Run every available retriever and fuse. Vector retrievers are skipped
@@ -276,6 +320,7 @@ def search(q: str, *, limit: int = 60, filters: dict | None = None,
     hits = _rrf(groups, weights, k)
     for h in hits:
         h.moment = moments.get(h.item_id)
+    match_strength(hits, cfg.get("search.dim_range", 0.15))
     hits = _apply_filters(conn, hits, filters or {})
     return {
         "query": q,

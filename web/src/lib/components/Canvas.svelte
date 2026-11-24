@@ -1,7 +1,7 @@
 <script lang="ts">
   import { scale } from "svelte/transition";
   import { cubicOut } from "svelte/easing";
-  import type { Item } from "../api";
+  import { clock, isTimed, whyLabel, type Item } from "../api";
 
   let { items, onopen, oninfo, focusItem = null, relKey = "" }:
     { items: Item[]; onopen: (id: number) => void; oninfo: (id: number) => void;
@@ -124,6 +124,15 @@
      endless, so its extent is 0 and clamping is skipped. */
   type Layout = { tiles: Tile[]; extent: number };
 
+  /* One card species (spec 13.2): an image, a video and a recording are
+     all pictures in the grid — the photograph, the poster frame, the drawn
+     waveform — and only a small badge says the last two play over time.
+     A search that matched a SCENE shows that scene's keyframe instead of
+     the poster, so the tile is the moment that was found. */
+  const pictureOf = (it: Item): string | undefined =>
+    it.kind === "note" ? undefined
+      : (it.moment?.kind === "frames" && it.moment.frame_url) || it.thumb_url;
+
   const ratioOf = (it: Item) =>
     it.width && it.height ? Math.min(Math.max(it.height / it.width, 0.62), 1.55) : 0.72;
 
@@ -143,7 +152,7 @@
       const start = mod(c * 7, items.length);
       for (let i = 0; i < Math.min(items.length, 10); i++) {
         const item = items[mod(start + i * 3, items.length)];
-        const h = Math.round(item.kind === "image"
+        const h = Math.round(item.kind !== "note"
           ? w * ratioOf(item) : Math.max(150, w * 0.72));
         cells.push({ item, y: cy, h });
         cy += h + GAP;
@@ -349,6 +358,31 @@
      is the behaviour the churn problem above requires; orbit and focus
      tiles unwind, outermost ranks trailing, so the ring collapses the
      way it grew. */
+  /* The button's name, so a screen reader hears what a sighted person
+     reads off the badge. */
+  /* After a search every result is drawn, but not every result is an
+     answer: a query about a sound lets the "looks similar" retriever admit
+     a flat tail of photographs that all sit well below the real match.
+     `match` (0..1, relative to the query's best result) dims them so the
+     answers read first. The floor keeps a dimmed tile recognisable, and
+     hover or keyboard focus brings it back to full strength. Outside a
+     search `match` is absent and nothing dims. */
+  const DIM_FLOOR = 0.2;
+  const WEAK = 0.34;
+  const dimOf = (t: Tile) =>
+    t.isFocus || t.item.match == null ? 1
+      : DIM_FLOOR + (1 - DIM_FLOOR) * Math.min(1, Math.max(0, t.item.match));
+
+  function label(it: Item): string {
+    const name = it.title ?? `item ${it.id}`;
+    const weak = it.match != null && it.match < WEAK ? ", weak match" : "";
+    if (!isTimed(it.kind)) return name + weak;
+    const parts = [name, it.kind];
+    if (it.duration) parts.push(clock(it.duration));
+    if (it.moment) parts.push(`matched at ${clock(it.moment.start)}`);
+    return parts.join(", ") + weak;
+  }
+
   const isOrbitTile = (t: Tile) => t.key[0] !== "L";
   const leave = (t: Tile) =>
     reduced || !isOrbitTile(t)
@@ -363,16 +397,18 @@
      onwheel={wheel} onpointerdown={down}
      role="application" aria-label="library canvas" tabindex="-1">
   {#each tiles as t (t.key)}
+    {@const pic = pictureOf(t.item)}
     <button class="tile" class:isfocus={t.isFocus}
             style:left="{t.x}px" style:top="{t.y}px"
             style:width="{t.w}px" style:height="{t.h}px"
             style:z-index={t.isFocus ? 2 : 1}
+            style:--dim={dimOf(t)}
             in:scale={enter(t.rank)}
             out:scale={leave(t)}
             onclick={(e) => tileClick(e, t.item.id)}
-            aria-label={t.item.title ?? `item ${t.item.id}`}>
-      {#if t.item.kind === "image" && t.item.thumb_url}
-        <img src={t.item.thumb_url} alt={t.item.title ?? ""}
+            aria-label={label(t.item)}>
+      {#if pic}
+        <img src={pic} alt={t.item.title ?? ""}
              loading="eager" decoding="async" draggable="false" />
       {:else}
         {@const n = splitNote(t.item)}
@@ -384,7 +420,29 @@
       <!-- The reference lightens the tile and states the one thing a plain
            click does. Tags ride underneath it, small, because they are the
            reason two things end up next to each other. -->
+      {#if isTimed(t.item.kind)}
+        <!-- Kind glyph plus length; in a search that matched inside the
+             file, where it matched leads and the length follows. -->
+        <span class="badge meta" class:hit={!!t.item.moment} aria-hidden="true">
+          {#if t.item.kind === "video"}
+            <svg viewBox="0 0 12 12"><path class="fill" d="M3 1.8v8.4L10 6z" /></svg>
+          {:else}
+            <svg viewBox="0 0 12 12"><path d="M1.5 5v2M4 3v6M6.5 1.5v9M9 3.5v5M11 5.2v1.6" /></svg>
+          {/if}
+          {#if t.item.moment}
+            <span class="at">{clock(t.item.moment.start)}</span>
+            {#if t.item.duration}<span class="of">/ {clock(t.item.duration)}</span>{/if}
+          {:else if t.item.duration}
+            <span>{clock(t.item.duration)}</span>
+          {/if}
+        </span>
+      {/if}
       <span class="veil">
+        {#if t.item.why?.length}
+          <span class="hint meta">
+            {[...new Set(t.item.why.map((k) => whyLabel(k, t.item)))].join(" · ")}
+          </span>
+        {/if}
         <span class="hint meta">
           {orbit ? "click to re-centre" : "click to view similar"}
         </span>
@@ -418,8 +476,10 @@
   .tile {
     position: absolute; padding: 0; border: 0; background: var(--well);
     overflow: hidden; cursor: pointer; border-radius: var(--r-tile);
+    opacity: var(--dim, 1);
     transition: opacity 160ms var(--ease);
   }
+  .tile:hover, .tile:focus-visible { opacity: 1; }
   .tile img {
     width: 100%; height: 100%; object-fit: cover; display: block;
     user-select: none; -webkit-user-drag: none;
@@ -459,6 +519,35 @@
   }
   .tile:hover .info, .info:focus-visible { opacity: 1; }
   .info:hover { background: var(--blue); border-color: var(--blue); color: #fff; }
+
+  /* Duration badge for audio and video. Opaque surface + text — the same
+     pair every panel already uses (Porcelain on Carbon, Carbon on White) —
+     rather than the info marker's translucent Steel: over a bright poster
+     a mid-grey composite loses contrast, and --steel does not flip with
+     the theme while --text does. Sits under the veil, so hover still
+     reads cleanly. */
+  .badge {
+    position: absolute; left: 10px; bottom: 10px; z-index: 0;
+    display: inline-flex; align-items: center; gap: 5px;
+    height: 24px; padding: 0 10px 0 8px;
+    border-radius: var(--r-pill);
+    background: var(--surface); color: var(--text);
+    border: 1px solid var(--keyline);
+    font-weight: 500; letter-spacing: var(--ls-ctl);
+    font-variant-numeric: tabular-nums; white-space: nowrap;
+    pointer-events: none;
+  }
+  /* A matched moment is marked by an outline, not a fill: blue stays on
+     the one primary action. --accent is the theme's interactive-text
+     colour, and a 1px mark only needs 3:1. */
+  .badge.hit { border-color: var(--accent); }
+  .badge .at { font-weight: 600; }
+  .badge .of { color: var(--muted); font-weight: 400; }
+  .badge svg { width: 12px; height: 12px; flex: 0 0 auto; }
+  .badge svg path {
+    fill: none; stroke: currentColor; stroke-width: 1.3; stroke-linecap: round;
+  }
+  .badge svg path.fill { fill: currentColor; stroke: none; }
 
   .veil {
     position: absolute; inset: 0; padding: 16px;

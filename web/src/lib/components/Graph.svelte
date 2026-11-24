@@ -59,7 +59,7 @@
         {:else}
           <rect x={n.x - 22} y={n.y - 16} width="44" height="32" rx="6"
                 fill="var(--raised)" />
-          <text x={n.x} y={n.y + 3} text-anchor="middle" class="glyph">note</text>
+          <text x={n.x} y={n.y + 3} text-anchor="middle" class="glyph">{n.kind}</text>
         {/if}
         <rect x={n.x - 22} y={n.y - 16} width="44" height="32" rx="6"
               fill="none" stroke={n.id === id ? "var(--link)" : "var(--border)"}

@@ -46,6 +46,7 @@ def search(q: str, limit: int = 60, group: bool = False,
         c["score"] = round(h.score, 5)
         c["why"] = h.why
         c["ranks"] = h.ranks
+        c["match"] = h.match
         if h.moment is not None:
             c["moment"] = h.moment
         results.append(c)

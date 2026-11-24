@@ -15,10 +15,12 @@ learned:
     session is built one provider at a time, degrading on failure. One
     model's TRT failure must not take the others down with it.
 
-A graph that is dynamically quantised (MatMulInteger/DynamicQuantizeLinear)
-has no TensorRT kernels; TRT would split it into many tiny partitions for no
-gain. `backend_for()` therefore sends such graphs to CUDA unless a model says
-otherwise.
+A graph that uses ONNX Runtime-only quantisation ops has no TensorRT kernels;
+TRT would split it into many tiny partitions for no gain. That covers dynamic
+quantisation (MatMulInteger, DynamicQuantizeLinear) and weight-only block
+quantisation (MatMulNBits, GatherBlockQuantized) - the latter is what
+onnx-community's EmbeddingGemma 2 "*_quantized" graphs actually use.
+`backend_for()` sends such graphs to CUDA unless a model says otherwise.
 """
 from __future__ import annotations
 
@@ -104,14 +106,20 @@ def providers(backend: Backend, key: str | None = None, *, int8: bool = False) -
     return chain
 
 
-def is_dynamic_quantised(path: Path) -> bool:
-    """True for graphs quantised with ORT's dynamic quantiser, which TRT
+# ONNX Runtime contrib / integer ops with no TensorRT implementation.
+ORT_ONLY_QUANT_OPS = frozenset({
+    "MatMulInteger", "DynamicQuantizeLinear", "ConvInteger",       # dynamic quantisation
+    "MatMulNBits", "GatherBlockQuantized", "MatMulBnb4",          # weight-only block quant
+})
+
+
+def is_ort_quantised(path: Path) -> bool:
+    """True for graphs that rely on ORT-only quantisation ops, which TRT
     cannot run. Reads only the graph's op types - the weights stay on disk."""
     try:
         import onnx
         m = onnx.load(str(path), load_external_data=False)
-        ops = {n.op_type for n in m.graph.node}
-        return bool(ops & {"MatMulInteger", "DynamicQuantizeLinear", "ConvInteger"})
+        return bool({n.op_type for n in m.graph.node} & ORT_ONLY_QUANT_OPS)
     except Exception:
         return "quantized" in Path(path).name
 
@@ -121,7 +129,7 @@ def backend_for(path: Path, requested: Backend) -> Backend:
     CUDA when it cannot."""
     if requested != "auto":
         return requested
-    if "TensorrtExecutionProvider" in available_providers() and not is_dynamic_quantised(path):
+    if "TensorrtExecutionProvider" in available_providers() and not is_ort_quantised(path):
         return "tensorrt"
     return "onnx-cuda"
 
