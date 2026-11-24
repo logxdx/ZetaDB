@@ -97,7 +97,25 @@ def _frames_for(conn: sqlite3.Connection, item_id: int, root: Path) -> list[Path
     return picks
 
 
+def _uncalibrated(conn: sqlite3.Connection) -> int:
+    return conn.execute("SELECT count(*) FROM vocab_terms WHERE state = 'active' "
+                        "AND (clip_mu IS NULL OR clip_sigma IS NULL)").fetchone()[0]
+
+
 def run(item_ids: list[int]) -> None:
+    """Tag a batch. Terms without a CLIP calibration (a new library, or a
+    reprompted term) are calibrated here once enough image vectors exist -
+    including the ones this batch just wrote - and the batch is then
+    re-scored, so the first images are not tagged on the uncalibrated
+    fallback while every later one gets the real thresholds (spec 7.3)."""
+    before = _uncalibrated(reader())
+    _tag(item_ids)
+    if before and V.calibrate_clip() and _uncalibrated(reader()) < before:
+        log.info("calibrated %d term(s) on this batch's vectors; re-scoring it", before)
+        _tag(item_ids)
+
+
+def _tag(item_ids: list[int]) -> None:
     cfg = load()
     conn = reader()
     root = cfg.path("paths.data")

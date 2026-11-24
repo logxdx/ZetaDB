@@ -179,7 +179,7 @@ def test_tag_stage_honours_requires_text():
     import inspect
 
     from server.ingest.stages import tag_visual
-    src = inspect.getsource(tag_visual.run)
+    src = inspect.getsource(tag_visual._tag)
     assert "requires_text" in src and "has_text" in src
 
 

@@ -59,6 +59,12 @@ def _build_links() -> Path:
                 continue
             for name in (so.name, f"{m.group(1)}.so"):
                 link = dest / name
+                # A moved or renamed checkout leaves these links dangling,
+                # and exists() is False for a dangling link, so symlink_to
+                # would hit FileExistsError forever: replace any link that
+                # does not point at this venv's library.
+                if link.is_symlink() and os.readlink(link) != str(so):
+                    link.unlink()
                 if not link.exists():
                     try:
                         link.symlink_to(so)

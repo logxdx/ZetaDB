@@ -375,3 +375,53 @@ def test_lease_holds_is_thread_scoped():
     finally:
         e.release(lease)
     assert not e.holds("A")
+
+
+def test_native_links_survive_a_moved_venv(tmp_path, monkeypatch):
+    """A renamed checkout leaves the unversioned-soname links dangling; they
+    must be re-pointed, not silently kept (cuDNN failed to load after the
+    iwashere -> ZetaDB folder rename)."""
+    from server.models import _native as N
+    old = tmp_path / "old" / "lib"
+    new = tmp_path / "new" / "lib"
+    new.mkdir(parents=True)
+    (new / "libcudnn.so.9").write_bytes(b"")
+    links = tmp_path / "links"
+    links.mkdir()
+    (links / "libcudnn.so").symlink_to(old / "libcudnn.so.9")      # dangling
+    monkeypatch.setattr(N, "link_dir", lambda: links)
+    monkeypatch.setattr(N, "_wheel_lib_dirs", lambda: [new])
+    N._build_links()
+    assert (links / "libcudnn.so").resolve() == (new / "libcudnn.so.9").resolve()
+    assert (links / "libcudnn.so.9").exists()
+
+
+def test_tag_visual_calibrates_then_rescores_once(monkeypatch):
+    """A new library has no CLIP calibration: the batch that first makes
+    calibration possible is re-scored with it; later batches are not."""
+    from server.ingest.stages import tag_visual as T
+    calls, state = [], {"uncal": 56}
+    monkeypatch.setattr(T, "reader", lambda: None)
+    monkeypatch.setattr(T, "_uncalibrated", lambda conn: state["uncal"])
+    monkeypatch.setattr(T, "_tag", lambda ids: calls.append(list(ids)))
+
+    def calibrate():
+        state["uncal"] = 0
+        return 56
+    monkeypatch.setattr(T.V, "calibrate_clip", calibrate)
+    T.run([1, 2])
+    assert calls == [[1, 2], [1, 2]]          # scored, calibrated, re-scored
+    calls.clear()
+    T.run([3])
+    assert calls == [[3]]                     # already calibrated: once
+
+
+def test_tag_visual_does_not_rescore_when_calibration_is_skipped(monkeypatch):
+    from server.ingest.stages import tag_visual as T
+    calls = []
+    monkeypatch.setattr(T, "reader", lambda: None)
+    monkeypatch.setattr(T, "_uncalibrated", lambda conn: 56)
+    monkeypatch.setattr(T, "_tag", lambda ids: calls.append(list(ids)))
+    monkeypatch.setattr(T.V, "calibrate_clip", lambda: 0)   # < 8 image vectors
+    T.run([1])
+    assert calls == [[1]]

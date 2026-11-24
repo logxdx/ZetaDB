@@ -85,7 +85,17 @@ def _reseed_vocab_if_flagged() -> None:
     existing term gets its Eye alias without a manual /api/vocab/seed."""
     from server.db.conn import reader
     from server.search import vocab as V
-    row = reader().execute("SELECT value FROM meta WHERE key = 'vocab_reseed'").fetchone()
+    conn = reader()
+    if not conn.execute("SELECT 1 FROM vocab_terms WHERE state = 'active' LIMIT 1").fetchone():
+        # A brand-new library: nothing ever seeded it, so tag_visual would
+        # log "vocabulary is empty" and tag nothing, forever. Calibration
+        # follows once tag_visual has image vectors to measure against.
+        try:
+            log.info("vocabulary seeded: %d term(s)", V.seed_from_yaml())
+        except Exception:
+            log.exception("vocabulary seed failed; run POST /api/vocab/seed")
+        return
+    row = conn.execute("SELECT value FROM meta WHERE key = 'vocab_reseed'").fetchone()
     if not row or row["value"] != "1":
         return
     try:
