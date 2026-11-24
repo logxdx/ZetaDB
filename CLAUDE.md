@@ -34,7 +34,7 @@ moment. Single-user, local-only. (Formerly *iwashere*.)
 uv run -m server.app                    # backend + built SPA on :8777
 cd web && npm run dev                   # hot-reload UI on :5173, proxies /api
 
-uv run --with pytest pytest tests/ -q   # 65 unit + regression tests, ~1s, no GPU
+uv run --with pytest pytest tests/ -q   # 68 unit + regression tests, ~1s, no GPU
 uv run scripts/smoke.py                 # 25 API contract checks, needs a server
 cd web && npm run build && npm run check
 ```
@@ -53,21 +53,19 @@ you an animation is missing when it is not.
 
 ## Remaining work
 
-**[M8] Needs the GPU — measure before trusting** (spec §20.6). One script
-covers the first three items:
+**[M8] Measured on the GPU** (spec §20.6): engine providers, latencies and
+VRAM, pool A↔B switching end to end, Eye against JoyTag, and LFM3-VL 2B as
+the captioner. Still owed, on real recordings rather than synthetic clips:
 
 ```sh
-cp data/iwashere.db data/pre_m8.db        # BEFORE the first v4 start: the JoyTag-era snapshot
-uv run -m server.app                      # migrates, re-seeds, re-tags every image with Eye
-uv run scripts/m8_gpu_check.py --before data/pre_m8.db --media ~/some-recordings-and-clips
+uv run scripts/m8_gpu_check.py --skip-models --media ~/some-recordings-and-clips
 ```
 
-- Eye's tag quality against JoyTag's on the real corpus (accepted / pending /
-  review rejects), and its TensorRT build + latency.
-- `search.min_cos_moment` (0.50 is a placeholder): text → audio and text →
-  video cosine bands on real recordings, as §10 did for text → image.
+- `search.min_cos_moment` (0.50) and `search.dim_range` (0.15): text → audio
+  and text → video cosine bands, as §10 did for text → image.
 - EG2 vision encoder fp16-on-TensorRT against int8-on-CUDA.
-- Media stage throughput and pool A peak with the audio encoder resident.
+- LFM3-VL 2B through the §17.9 caption-as-query bake-off
+  (`scripts/vlm_bakeoff.py`, candidate `lfm3_vl_2b`).
 - The audio/video UI in a browser: cards, moment badges, player seeking.
 
 **Documented but not built**

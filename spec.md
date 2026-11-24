@@ -1958,6 +1958,53 @@ re-seeded once at startup. **[M8] measured** on the real 32-item library: 32/32 
 32/32 FTS rows intact, 0 foreign-key violations, 16/16 human tags kept, 29 images queued, 43 terms
 re-aliased.
 
+### 20.6 Measured on the GPU (RTX 4050 Laptop, 6 GB)
+
+`scripts/m8_gpu_check.py` plus a full server run over the 29-image corpus and four synthetic
+clips. Every number below is measured, not assumed.
+
+| Model | Provider | Load | Per item | VRAM |
+| --- | --- | --- | --- | --- |
+| Eye (photo) | TensorRT FP16 | 141 s first build, then cached | 34.8 ms/image | 560 MB |
+| EG2 vision + audio encoders (int8) | CUDA | — | 1.03 s/image incl. CPU backbone | 1070 MB |
+| EG2 backbone, ingest copy | CUDA | — | 30 s audio window 0.13 s (CPU 0.79 s); 32 passages 0.19 s (CPU 2.3 s) | 686 MB |
+| PP-OCR det / rec | TensorRT / TensorRT | 2.0 s | 0.248 s/image | 414 MB |
+| LFM3-VL 2B Q6 (captioner) | llama.cpp CUDA | 2.1 s | ~2.0 s/image incl. tag proposals | 2020 MB |
+
+The 4.8 s/window first measured for audio was cold-start (session builds), not steady state.
+
+**Pool switching, end to end.** tag_visual (A, 36.7 s for 29) → A evicted → caption (B, 59.0 s)
+→ B evicted → extract → embed (A, 13.3 s) → finalize. Peak 2.2 GB on the card; with Qwen3.5-4B
+as the captioner the same run peaked at 4.0 GB. 25/25 API smoke checks pass on the result.
+
+**Two leaks the run found, both fixed.**
+- The embed stage ran with no pool, yet an image's item vector needs a vision pass, so the
+  vision encoder loaded onto CUDA outside any lease and stayed (~0.7 GB) while pool B loaded
+  llama.cpp. embed now takes pool A. On the CPU it would cost 2.15 s/image.
+- `Engine.holds(pool)` is scoped to the lease-holding thread, so the ingest-time CUDA backbone
+  is used only by the stage that holds pool A; a search query running beside it stays on the
+  CPU copy and never touches VRAM it does not own. The CUDA copy is dropped with the encoders.
+
+**Eye against JoyTag** (per-image diff, judged by eye from a contact sheet). Gains are mostly
+right: *photo, sky, cloud, building*, *table* on the dashboard screenshot, *bridge/road* on the
+car-on-a-bridge shot. Doubtful: *night* on a sunset silhouette, *tree* on a skyline. Losses are
+on abstract renders (noise, a 3D spiral, a maze texture, a neon sign) where JoyTag's tags were
+guesses anyway. The diff also exposed two older bugs, fixed: a re-run of tag_visual re-accepted
+tags a person had rejected, and changing a term's prompt kept the old prompt's CLIP calibration
+(it inflated *indoors / night / portrait*); a reprompt now clears it and the reseed recalibrates.
+
+**Captioner.** LFM2.5-VL 3B's weights are no longer on this machine; LFM3-VL 2B (local, `~/models`)
+replaces it. It is a hybrid reasoner, and under the GBNF grammar thinking ON returns an empty
+`content` (llama.cpp files the constrained output under `reasoning_content`), so it runs with
+`enable_thinking = false`: 1.2 s/image on 8 images with accurate captions, against Qwen3.5-4B's
+2.6 s. It has not been through the §17.9 caption-as-query bake-off; `vlm_bakeoff.py` has it as
+`lfm3_vl_2b`.
+
+**Still owed.**
+- `min_cos_moment` (0.50) and `dim_range` (0.15) on *real* recordings. The synthetic clips put
+  the best query cosine at 0.62–0.69 and the median at 0.58–0.66, a band too narrow to tune on.
+- EG2 vision encoder at fp16 on TensorRT against int8 on CUDA.
+
 ### 20.7 Dimming by relevance
 
 RRF ranks by position, which says nothing about whether the 30th result is nearly as good as the
@@ -1969,12 +2016,3 @@ strongest piece wins. The canvas draws a result at `0.2 + 0.8 × match` opacity,
 hover or keyboard focus, and says "weak match" to a screen reader below 0.34. On the beep query
 the three real answers scored 0.80–1.00 and 26 of the 29 photographs 0.4 or less.
 `dim_range` is a placeholder until it is tuned on a real library.
-
-### 20.6 Not yet measured — needs the GPU
-
-- Eye's tag quality against JoyTag's on this corpus (accepted / pending / review-queue rejects).
-- Eye's TensorRT build and latency.
-- `min_cos_moment` (0.50 is a placeholder under the image floor): text → audio and text → video
-  cosine bands on real recordings, the same way §10 measured text → image.
-- EG2 vision encoder at fp16 on TensorRT against int8 on CUDA (VRAM, s/image, margin).
-- Media stage throughput (windows/s) and pool A peak with the audio encoder resident.

@@ -228,7 +228,7 @@ class LlamaServer:
             payload["chat_template_kwargs"] = {"enable_thinking": thinking}
         if grammar:
             payload["grammar"] = grammar
-        # Publisher-recommended sampling, e.g. LFM2.5-VL's top_k / repeat_penalty.
+        # Publisher-recommended sampling, e.g. LFM-VL's top_k / repeat_penalty.
         if extra:
             payload.update(extra)
         r = self._client.post("/v1/chat/completions", json=payload)

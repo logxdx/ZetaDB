@@ -75,7 +75,7 @@ It's built to fit a laptop's 6 GB graphics card.
 - **Embeddings:** [EmbeddingGemma 2](https://huggingface.co/google/embeddinggemma-2) by Google DeepMind
 - **Image tags:** [Eye](https://huggingface.co/desert-ant-labs/eye), used with permission — Powered by [Desert Ant Labs](https://desertant.com)
 - **Text in images:** [PP-OCRv6](https://huggingface.co/PaddlePaddle) by PaddlePaddle
-- **Descriptions:** [LFM2.5-VL](https://www.liquid.ai) by Liquid AI, via [llama.cpp](https://github.com/ggml-org/llama.cpp)
+- **Descriptions:** [LFM3-VL](https://www.liquid.ai) by Liquid AI, via [llama.cpp](https://github.com/ggml-org/llama.cpp)
 - **Extraction:** [Needle](https://github.com/cactus-compute/needle) by Cactus
 - **Search:** [SQLite](https://sqlite.org), [sqlite-vec](https://github.com/asg017/sqlite-vec)
 - **Runtime:** [ONNX Runtime](https://onnxruntime.ai) with TensorRT, [FFmpeg](https://ffmpeg.org)

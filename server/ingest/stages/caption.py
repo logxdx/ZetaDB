@@ -2,7 +2,7 @@
 
 The captioner named by `models.vlm_default` describes each image and, in the
 same call, emits the structured CaptionTags object under a GBNF grammar.
-That is LFM2.5-VL 3B since [M7]; nothing here is model-specific any more -
+That is LFM3-VL 2B since [M8] (LFM2.5-VL 3B in [M7]); nothing here is model-specific any more -
 the directory, globs, server flags, sampling and display name all come from
 config, because the bake-off in spec 17.9 made swapping it a config change.
 
@@ -117,7 +117,7 @@ def _server() -> LlamaServer | None:
                        ctx=spec.get("ctx", 16384), ngl=99,
                        cache_type=spec.get("cache_type"),
                        flash_attn=spec.get("flash_attn", False),
-                       # --jinja for LFM2.5-VL; without it llama.cpp does not
+                       # --jinja for LFM-VL; without it llama.cpp does not
                        # render its chat template at all.
                        extra=list(spec.get("server_args") or []))
     return _srv

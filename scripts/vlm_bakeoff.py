@@ -122,6 +122,14 @@ CANDIDATES: list[Candidate] = [
               extra=["--jinja", "--image-max-tokens", "1024"],
               sampling={"top_k": 50, "repeat_penalty": 1.0},
               abs_dir="~/llama.cpp/models/lfm25-vl-3b"),
+    # [M8] The captioner since LFM2.5-VL left this machine. A hybrid
+    # reasoner: thinking must be OFF under the grammar, or the constrained
+    # output lands in reasoning_content and content comes back empty.
+    Candidate("lfm3_vl_2b", "", "LFM3-VL-2B-Q6_K.gguf", "mmproj-LFM3-VL-2B-Q8_0.gguf",
+              note="LFM3-VL 2B, Q6 text + Q8 mmproj, in ~/models",
+              extra=["--jinja"], thinking_kwarg=True,
+              sampling={"top_k": 50, "repeat_penalty": 1.0},
+              abs_dir="~/models/lfm3-vl-2b"),
     Candidate("internvl3_2b", "ggml-org/InternVL3-2B-Instruct-GGUF",
               "InternVL3-2B-Instruct-Q4_K_M.gguf",
               "mmproj-InternVL3-2B-Instruct-f16.gguf",

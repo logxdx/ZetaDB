@@ -32,11 +32,13 @@ PIPELINE: dict[str, tuple[str | None, str | None]] = {
     "tag_visual": ("caption",    "A"),
     "caption":    ("extract",    "B"),
     "extract":    ("embed",      None),
-    # No pool: the EG2 backbone is CPU-resident by design, so that a search
-    # query never queues behind ingest for pool A. An image reaching this
-    # stage recomputes its soft tokens on the CPU rather than taking a lease
-    # for a sub-second job; the GPU vision pass happens once, in tag_visual.
-    "embed":      ("finalize",   None),
+    # Pool A: an image's item vector needs a vision pass (its text - OCR and
+    # caption - only exists by now), and the encoder must not sit in VRAM
+    # outside a lease while pool B holds llama.cpp. [M8] measured it doing
+    # exactly that: ~0.7 GB resident after eviction. On the CPU it costs
+    # 2.15 s/image. Search is unaffected - queries use the CPU backbone and
+    # take no lease.
+    "embed":      ("finalize",   "A"),
     "finalize":   (None,         None),
 }
 STAGE_ORDER = list(PIPELINE)
