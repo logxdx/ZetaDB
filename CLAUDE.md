@@ -53,7 +53,14 @@ you an animation is missing when it is not.
 
 ## Remaining work
 
-**[M8] Needs the GPU — measure before trusting** (spec §20.6)
+**[M8] Needs the GPU — measure before trusting** (spec §20.6). One script
+covers the first three items:
+
+```sh
+cp data/iwashere.db data/pre_m8.db        # BEFORE the first v4 start: the JoyTag-era snapshot
+uv run -m server.app                      # migrates, re-seeds, re-tags every image with Eye
+uv run scripts/m8_gpu_check.py --before data/pre_m8.db --media ~/some-recordings-and-clips
+```
 
 - Eye's tag quality against JoyTag's on the real corpus (accepted / pending /
   review rejects), and its TensorRT build + latency.
